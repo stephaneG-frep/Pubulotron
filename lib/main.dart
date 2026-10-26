@@ -1,20 +1,28 @@
-import 'dart:convert';
+import 'dart:async' show TimeoutException;
 import 'dart:io';
 
-import 'package:archive/archive.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show MissingPluginException;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:uuid/uuid.dart';
 
+import 'models/pubulotron_models.dart';
+import 'repositories/project_repository.dart';
+import 'services/ai_service.dart';
+import 'services/ai_design_service.dart';
+import 'services/pdf_service.dart';
+import 'services/template_service.dart';
+
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  if (!kIsWeb && (Platform.isLinux || Platform.isWindows || Platform.isMacOS)) {
+    databaseFactory = databaseFactoryFfi;
+  }
   runApp(const PubulotronApp());
 }
 
@@ -36,6 +44,11 @@ class PubulotronApp extends StatelessWidget {
         colorScheme: colorScheme,
         scaffoldBackgroundColor: const Color(0xFF0F172A),
         cardTheme: const CardThemeData(elevation: 0, margin: EdgeInsets.zero),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: const Color(0xFF111827),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+        ),
       ),
       home: const PubulotronShell(),
     );
@@ -58,166 +71,78 @@ class _PubulotronShellState extends State<PubulotronShell> {
     'Mistral',
   ];
 
-  final TextEditingController _promptController = TextEditingController(
-    text: 'Je suis réparateur informatique. Crée-moi une carte de visite futuriste avec un fond bleu électrique, mon téléphone et un QR code vers mon site internet.',
+  final _promptController = TextEditingController(
+    text: 'Je suis réparateur informatique. Crée-moi une carte de visite futuriste avec un fond bleu électrique, mon téléphone, mon email et un QR code vers mon site internet.',
   );
-  final TextEditingController _companyController = TextEditingController(
+  final _companyController = TextEditingController(
     text: 'TechCare Réparations',
   );
-  final TextEditingController _sloganController = TextEditingController(
+  final _sloganController = TextEditingController(
     text: 'Ton PC, notre obsession.',
   );
-  final TextEditingController _phoneController = TextEditingController(
-    text: '+33 6 12 34 56 78',
-  );
-  final TextEditingController _emailController = TextEditingController(
+  final _phoneController = TextEditingController(text: '+33 6 12 34 56 78');
+  final _emailController = TextEditingController(
     text: 'contact@techcare-repair.fr',
   );
-  final TextEditingController _websiteController = TextEditingController(
-    text: 'techcare-repair.fr',
+  final _websiteController = TextEditingController(text: 'techcare-repair.fr');
+  final _qrController = TextEditingController(
+    text: 'https://techcare-repair.fr',
+  );
+  final _copiesController = TextEditingController(text: '12');
+  final _cardWidthController = TextEditingController(text: '85');
+  final _cardHeightController = TextEditingController(text: '55');
+  final _marginController = TextEditingController(text: '12');
+  final _gapController = TextEditingController(text: '6');
+  final _bleedController = TextEditingController(text: '2');
+  final _apiKeyController = TextEditingController();
+
+  final _picker = ImagePicker();
+  final _projectRepository = ProjectRepository();
+  final List<GraphicProject> _savedProjects = <GraphicProject>[];
+  final List<DesignConcept> _concepts = <DesignConcept>[];
+  final List<CreativeElement> _canvasElements = <CreativeElement>[];
+  final List<List<CreativeElement>> _history = <List<CreativeElement>>[];
+  final List<TemplateCard> _templates = TemplateService.catalog;
+
+  BusinessProfile _profile = BusinessProfile(
+    id: 'default-profile',
+    name: 'TechCare Réparations',
+    slogan: 'Ton PC, notre obsession.',
+    description: 'Service de réparation informatique et conseil digital.',
+    services: ['Diagnostics', 'Réparations', 'Mises à jour', 'Conseils'],
+    phone: '+33 6 12 34 56 78',
+    email: 'contact@techcare-repair.fr',
+    website: 'techcare-repair.fr',
+    hours: 'Lun-Ven, 9h-18h',
+    brandColors: const [
+      Color(0xFF7545FF),
+      Color(0xFF24C9C2),
+      Color(0xFFFFAA45),
+    ],
   );
 
   int _selectedIndex = 0;
+  int _selectedCanvasIndex = -1;
   String _selectedProvider = _providers.first;
   String _apiKey = '';
+  String? _aiConnectionMessage;
+  bool _isTestingAiConnection = false;
   bool _darkMode = true;
   bool _showGrid = true;
   bool _showGuides = true;
-  int _selectedCanvasIndex = 0;
+  bool _cutMarks = true;
+  String _paperSize = 'A4';
+  String _orientation = 'portrait';
   DesignConcept? _selectedConcept;
-  final ImagePicker _picker = ImagePicker();
-  late final ProjectRepository _projectRepository = ProjectRepository();
-  final TextEditingController _qrController = TextEditingController(
-    text: 'https://techcare-repair.fr',
-  );
-  final List<GraphicProject> _savedProjects = [];
-
-  final List<DesignConcept> _concepts = [
-    DesignConcept(
-      title: 'Nexus Pixel',
-      style: 'Futuriste',
-      palette: 'Bleu électrique + violet',
-      slogan: 'Réparer le futur, sans perdre le temps.',
-      summary: 'Carte de visite à forte présence avec lignes de circuit et QR code premium.',
-    ),
-    DesignConcept(
-      title: 'Signal Zero',
-      style: 'Luxe techno',
-      palette: 'Noir, cyan, orange',
-      slogan: 'Votre PC mérite une seconde vie.',
-      summary:
-          'Affiche premium orientée diagnostics rapides et présence digitale.',
-    ),
-    DesignConcept(
-      title: 'Cloud Break',
-      style: 'Motion lab',
-      palette: 'Violet, turquoise, blanc',
-      slogan: 'Merci, les bugs, on les évite.',
-      summary: 'Modèle dynamique pour flyer A5, parfait pour attirer les PME locales.',
-    ),
-    DesignConcept(
-      title: 'Byte Pop',
-      style: 'Pop digital',
-      palette: 'Rose, bleu nuit, orange',
-      slogan: 'Des réparations aussi rapides que fiables.',
-      summary:
-          'Composition moderne avec blocs lumineux et espace pour services.',
-    ),
-  ];
-
-  final List<TemplateCard> _templates = [
-    TemplateCard(
-      title: 'Carte de visite',
-      category: 'Informatique',
-      accent: const Color(0xFF24C9C2),
-      tag: 'A6',
-    ),
-    TemplateCard(
-      title: 'Flyer salon',
-      category: 'Événementiel',
-      accent: const Color(0xFFFF6384),
-      tag: 'A5',
-    ),
-    TemplateCard(
-      title: 'Menu restaurant',
-      category: 'Restauration',
-      accent: const Color(0xFFFFAA45),
-      tag: 'A4',
-    ),
-    TemplateCard(
-      title: 'Affiche promo',
-      category: 'Commerce',
-      accent: const Color(0xFF7545FF),
-      tag: 'A3',
-    ),
-  ];
-
-  final List<ProjectCardData> _projects = [
-    ProjectCardData(
-      title: 'Flyer réparateur',
-      status: 'À finaliser',
-      updated: 'Il y a 2h',
-      accent: const Color(0xFF7545FF),
-    ),
-    ProjectCardData(
-      title: 'Pack fidélité',
-      status: 'Validé',
-      updated: 'Hier',
-      accent: const Color(0xFF24C9C2),
-    ),
-    ProjectCardData(
-      title: 'Menu café',
-      status: 'Brouillon',
-      updated: '3 jours',
-      accent: const Color(0xFFFFAA45),
-    ),
-  ];
-
-  final List<CreativeElement> _canvasElements = [
-    CreativeElement(
-      'Titre',
-      0.15,
-      0.15,
-      230,
-      60,
-      const Color(0xFF7545FF),
-      'text',
-    ),
-    CreativeElement(
-      'Slogan',
-      0.18,
-      0.34,
-      260,
-      42,
-      const Color(0xFF24C9C2),
-      'text',
-    ),
-    CreativeElement(
-      'Photo',
-      0.53,
-      0.18,
-      180,
-      180,
-      const Color(0xFF17213B),
-      'image',
-    ),
-    CreativeElement('CTA', 0.32, 0.68, 200, 52, const Color(0xFFFF6384), 'cta'),
-    CreativeElement(
-      'Contact',
-      0.05,
-      0.78,
-      260,
-      70,
-      const Color(0xFFAA8CFF),
-      'text',
-    ),
-  ];
 
   @override
   void initState() {
     super.initState();
-    _loadApiKey();
+    _seedCanvas();
+    _loadAiSettings();
+    _loadProfiles();
     _loadProjects();
+    _generateConcepts();
   }
 
   @override
@@ -229,28 +154,294 @@ class _PubulotronShellState extends State<PubulotronShell> {
     _emailController.dispose();
     _websiteController.dispose();
     _qrController.dispose();
+    _copiesController.dispose();
+    _cardWidthController.dispose();
+    _cardHeightController.dispose();
+    _marginController.dispose();
+    _gapController.dispose();
+    _bleedController.dispose();
+    _apiKeyController.dispose();
     super.dispose();
+  }
+
+  void _seedCanvas() {
+    _canvasElements
+      ..clear()
+      ..addAll([
+        CreativeElement(
+          'Titre',
+          0.12,
+          0.14,
+          240,
+          54,
+          const Color(0xFF7545FF),
+          'text',
+          textContent: 'TechCare',
+        ),
+        CreativeElement(
+          'Slogan',
+          0.16,
+          0.34,
+          260,
+          42,
+          const Color(0xFF24C9C2),
+          'text',
+          textContent: 'Ton PC, notre obsession.',
+        ),
+        CreativeElement(
+          'Photo',
+          0.56,
+          0.18,
+          170,
+          170,
+          const Color(0xFF17213B),
+          'image',
+          imagePath: null,
+        ),
+        CreativeElement(
+          'CTA',
+          0.26,
+          0.68,
+          210,
+          54,
+          const Color(0xFFFF6384),
+          'cta',
+          textContent: 'Réparation express',
+        ),
+        CreativeElement(
+          'Contact',
+          0.08,
+          0.78,
+          260,
+          64,
+          const Color(0xFFAA8CFF),
+          'text',
+          textContent: '+33 6 12 34 56 78',
+        ),
+      ]);
+    _selectedCanvasIndex = 0;
+  }
+
+  BusinessProfile _currentProfile() {
+    return BusinessProfile(
+      id: _profile.id,
+      name: _companyController.text.trim().isEmpty
+          ? _profile.name
+          : _companyController.text.trim(),
+      slogan: _sloganController.text.trim(),
+      description: _profile.description,
+      services: _profile.services,
+      address: _profile.address,
+      phone: _phoneController.text.trim(),
+      email: _emailController.text.trim(),
+      website: _websiteController.text.trim(),
+      socials: _profile.socials,
+      hours: _profile.hours,
+      brandColors: _profile.brandColors,
+    );
+  }
+
+  void _applyTemplate(TemplateCard template) {
+    final profile = _currentProfile();
+    final dimensions = switch (template.id) {
+      'business-card' => ('85', '55'),
+      'salon-flyer' => ('148', '210'),
+      'restaurant-menu' => ('210', '297'),
+      'sale-poster' => ('297', '420'),
+      _ => ('85', '55'),
+    };
+    _pushHistory();
+    setState(() {
+      _canvasElements
+        ..clear()
+        ..addAll(TemplateService.createElements(template.id, profile));
+      _selectedCanvasIndex = -1;
+      _cardWidthController.text = dimensions.$1;
+      _cardHeightController.text = dimensions.$2;
+      _selectedIndex = 2;
+    });
+  }
+
+  void _startBlankCanvas() {
+    _pushHistory();
+    setState(() {
+      _canvasElements.clear();
+      _selectedCanvasIndex = -1;
+      _cardWidthController.text = '85';
+      _cardHeightController.text = '55';
+      _selectedIndex = 2;
+    });
+  }
+
+  Future<void> _loadAiSettings() async {
+    try {
+      final values = await Future.wait([
+        _storage.read(key: 'pubulotron_api_key'),
+        _storage.read(key: 'pubulotron_ai_provider'),
+      ]);
+      if (mounted) {
+        setState(() {
+          _apiKey = values[0] ?? '';
+          _apiKeyController.text = _apiKey;
+          if (_providers.contains(values[1])) {
+            _selectedProvider = values[1]!;
+          }
+        });
+      }
+      if (_apiKey.isNotEmpty) await _generateConcepts();
+    } on MissingPluginException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Stockage sécurisé indisponible : $error')),
+        );
+      }
+    } on Exception catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Impossible de charger les paramètres IA : $error'),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _saveAiSettings() async {
+    final apiKey = _apiKeyController.text.trim();
+    try {
+      if (apiKey.isEmpty) {
+        await _storage.delete(key: 'pubulotron_api_key');
+      } else {
+        await _storage.write(key: 'pubulotron_api_key', value: apiKey);
+      }
+      await _storage.write(
+        key: 'pubulotron_ai_provider',
+        value: _selectedProvider,
+      );
+      if (!mounted) return;
+      setState(() {
+        _apiKey = apiKey;
+        _aiConnectionMessage = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Paramètres IA sauvegardés en sécurité.')),
+      );
+    } on Exception catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Échec de la sauvegarde des paramètres IA : $error'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _testAiConnection() async {
+    setState(() {
+      _isTestingAiConnection = true;
+      _aiConnectionMessage = null;
+    });
+    try {
+      await AiService.testConnection(_selectedProvider, _apiKeyController.text);
+      if (!mounted) return;
+      setState(() {
+        _aiConnectionMessage = 'Connexion réussie avec $_selectedProvider.';
+      });
+    } on SocketException {
+      if (!mounted) return;
+      setState(() {
+        _aiConnectionMessage = 'Connexion réseau impossible. Vérifiez Internet et la résolution DNS du téléphone.';
+      });
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _aiConnectionMessage = 'Le fournisseur IA ne répond pas. Réessayez dans quelques instants.';
+      });
+    } on HttpException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _aiConnectionMessage = 'Échec de la connexion : ${error.message}';
+      });
+    } on FormatException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _aiConnectionMessage = error.message;
+      });
+    } on http.ClientException {
+      if (!mounted) return;
+      setState(() {
+        _aiConnectionMessage = 'Impossible de joindre le fournisseur. Vérifiez Internet, le DNS ou un éventuel filtrage réseau.';
+      });
+    } on Exception {
+      if (!mounted) return;
+      setState(() {
+        _aiConnectionMessage = 'Impossible de contacter le fournisseur. Vérifiez le réseau et la clé API.';
+      });
+    } finally {
+      if (mounted) setState(() => _isTestingAiConnection = false);
+    }
+  }
+
+  Future<void> _loadProfiles() async {
+    final profiles = await _projectRepository.loadProfiles();
+    if (!mounted || profiles.isEmpty) return;
+    final first = profiles.first;
+    setState(() {
+      _profile = first;
+      _companyController.text = first.name;
+      _sloganController.text = first.slogan;
+      _phoneController.text = first.phone;
+      _emailController.text = first.email;
+      _websiteController.text = first.website;
+    });
+  }
+
+  Future<void> _saveProfile() async {
+    final profile = BusinessProfile(
+      id: _profile.id,
+      name: _companyController.text.trim().isNotEmpty
+          ? _companyController.text.trim()
+          : 'Mon activité',
+      slogan: _sloganController.text.trim(),
+      description: _profile.description,
+      services: _profile.services,
+      address: _profile.address,
+      phone: _phoneController.text.trim(),
+      email: _emailController.text.trim(),
+      website: _websiteController.text.trim(),
+      socials: _profile.socials,
+      hours: _profile.hours,
+      brandColors: _profile.brandColors,
+    );
+    _profile = profile;
+    await _projectRepository.saveProfile(profile);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Profil professionnel sauvegardé.')),
+      );
+    }
   }
 
   Future<void> _loadProjects() async {
     final projects = await _projectRepository.loadProjects();
     if (!mounted) return;
     setState(() {
-      _savedProjects.clear();
-      _savedProjects.addAll(projects);
+      _savedProjects
+        ..clear()
+        ..addAll(projects);
     });
   }
 
   Future<void> _saveCurrentProject() async {
     final project = GraphicProject(
-      id: Uuid().v4(),
-      name: _companyController.text.isNotEmpty
-          ? _companyController.text
+      id: const Uuid().v4(),
+      name: _companyController.text.trim().isNotEmpty
+          ? _companyController.text.trim()
           : 'Projet sans titre',
-      description: _promptController.text,
+      description: _promptController.text.trim(),
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
-      elements: List.from(_canvasElements),
+      elements: List<CreativeElement>.from(_canvasElements),
     );
     await _projectRepository.saveProject(project);
     await _loadProjects();
@@ -264,35 +455,131 @@ class _PubulotronShellState extends State<PubulotronShell> {
   Future<void> _pickAndAddImage() async {
     final file = await _picker.pickImage(source: ImageSource.gallery);
     if (file == null) return;
+    final element = CreativeElement(
+      file.name,
+      0.55,
+      0.22,
+      180,
+      180,
+      const Color(0xFF17213B),
+      'image',
+      imagePath: file.path,
+    );
+    setState(() {
+      _canvasElements.add(element);
+      _selectedCanvasIndex = _canvasElements.length - 1;
+    });
+  }
+
+  void _pushHistory() {
+    _history.add(
+      List<CreativeElement>.from(
+        _canvasElements.map(
+          (element) => CreativeElement(
+            element.name,
+            element.x,
+            element.y,
+            element.width,
+            element.height,
+            element.color,
+            element.kind,
+            rotation: element.rotation,
+            opacity: element.opacity,
+            imagePath: element.imagePath,
+            locked: element.locked,
+            textContent: element.textContent,
+            fontSize: element.fontSize,
+          )..id = element.id,
+        ),
+      ),
+    );
+    if (_history.length > 20) {
+      _history.removeAt(0);
+    }
+  }
+
+  void _undo() {
+    if (_history.isEmpty) return;
+    final previous = _history.removeLast();
+    setState(() {
+      _canvasElements
+        ..clear()
+        ..addAll(previous);
+      _selectedCanvasIndex = _canvasElements.isEmpty ? -1 : 0;
+    });
+  }
+
+  void _addTextElement() {
+    _pushHistory();
     setState(() {
       _canvasElements.add(
         CreativeElement(
-          file.name,
-          0.55,
-          0.25,
-          180,
-          180,
-          const Color(0xFF17213B),
-          'image',
-          imagePath: file.path,
+          'Texte',
+          0.24,
+          0.26,
+          220,
+          60,
+          const Color(0xFF7545FF),
+          'text',
+          textContent: 'Votre texte ici',
         ),
       );
       _selectedCanvasIndex = _canvasElements.length - 1;
     });
   }
 
-  Future<void> _loadApiKey() async {
-    final key = await _storage.read(key: 'pubulotron_api_key');
-    if (key != null && mounted) setState(() => _apiKey = key);
+  void _addShape() {
+    _pushHistory();
+    setState(() {
+      _canvasElements.add(
+        CreativeElement(
+          'Forme',
+          0.36,
+          0.44,
+          160,
+          80,
+          const Color(0xFFFFAA45),
+          'shape',
+        ),
+      );
+      _selectedCanvasIndex = _canvasElements.length - 1;
+    });
   }
 
-  Future<void> _saveApiKey() async {
-    await _storage.write(key: 'pubulotron_api_key', value: _apiKey);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Clé API sauvegardée en sécurité.')),
-      );
-    }
+  void _duplicateSelected() {
+    final index = _selectedCanvasIndex;
+    if (index < 0 || index >= _canvasElements.length) return;
+    _pushHistory();
+    final element = _canvasElements[index];
+    final clone = CreativeElement(
+      '${element.name} copie',
+      (element.x + 0.04).clamp(0.0, 1.0),
+      (element.y + 0.04).clamp(0.0, 1.0),
+      element.width,
+      element.height,
+      element.color,
+      element.kind,
+      rotation: element.rotation,
+      opacity: element.opacity,
+      imagePath: element.imagePath,
+      locked: element.locked,
+      textContent: element.textContent,
+      fontSize: element.fontSize,
+    );
+    setState(() {
+      _canvasElements.insert(index + 1, clone);
+      _selectedCanvasIndex = index + 1;
+    });
+  }
+
+  void _deleteSelected() {
+    final index = _selectedCanvasIndex;
+    if (index < 0 || index >= _canvasElements.length) return;
+    _pushHistory();
+    setState(() {
+      _canvasElements.removeAt(index);
+      _selectedCanvasIndex = index > 0 ? index - 1 : 0;
+    });
   }
 
   Future<void> _generateConcepts() async {
@@ -302,7 +589,6 @@ class _PubulotronShellState extends State<PubulotronShell> {
       _apiKey,
     );
     if (!mounted) return;
-
     setState(() {
       _concepts
         ..clear()
@@ -313,52 +599,108 @@ class _PubulotronShellState extends State<PubulotronShell> {
     });
   }
 
-  Future<void> _exportPdf() async {
-    final pdf = pw.Document();
-    pdf.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        build: (pw.Context context) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Text(
-                'Pubulotron — Brief publicitaire',
-                style: pw.TextStyle(
-                  fontSize: 24,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-              pw.SizedBox(height: 12),
-              pw.Text('Entreprise: ${_companyController.text}'),
-              pw.Text('Slogan: ${_sloganController.text}'),
-              pw.Text('Téléphone: ${_phoneController.text}'),
-              pw.Text('Email: ${_emailController.text}'),
-              pw.Text('Site: ${_websiteController.text}'),
-              pw.SizedBox(height: 16),
-              pw.Text('Brief IA: ${_promptController.text}'),
-              pw.SizedBox(height: 20),
-              pw.Container(
-                padding: const pw.EdgeInsets.all(12),
-                decoration: pw.BoxDecoration(
-                  borderRadius: const pw.BorderRadius.all(
-                    pw.Radius.circular(8),
-                  ),
-                  color: PdfColors.purple100,
-                ),
-                child: pw.Text(
-                  'Livrable prêt pour impression et diffusion numérique.',
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
+  void _applyAiConcept(DesignConcept concept, int index) {
+    _pushHistory();
+    setState(() {
+      _selectedConcept = concept;
+      _canvasElements
+        ..clear()
+        ..addAll(
+          AiDesignService.createComposition(
+            concept: concept,
+            profile: _currentProfile(),
+            variant: index,
+          ),
+        );
+      _selectedCanvasIndex = -1;
+      _selectedIndex = 2;
+      _cardWidthController.text = '85';
+      _cardHeightController.text = '55';
+    });
+  }
 
-    await Printing.layoutPdf(
-      onLayout: (PdfPageFormat format) async => pdf.save(),
-    );
+  Future<void> _exportPdf() async {
+    const paperDimensions = {
+      'A4': (210.0, 297.0),
+      'A3': (297.0, 420.0),
+      'A5': (148.0, 210.0),
+      'Lettre US': (215.9, 279.4),
+    };
+    double parseDimension(TextEditingController controller, String label) {
+      final value = double.tryParse(controller.text.replaceAll(',', '.'));
+      if (value == null || !value.isFinite) {
+        throw ArgumentError('$label doit être un nombre valide.');
+      }
+      return value;
+    }
+
+    try {
+      final (paperWidth, paperHeight) = paperDimensions[_paperSize]!;
+      final spec = PrintLayoutSpec(
+        paperWidthMm: paperWidth,
+        paperHeightMm: paperHeight,
+        cardWidthMm: parseDimension(_cardWidthController, 'La largeur'),
+        cardHeightMm: parseDimension(_cardHeightController, 'La hauteur'),
+        marginMm: parseDimension(_marginController, 'La marge'),
+        gapMm: parseDimension(_gapController, 'L’espacement'),
+        bleedMm: parseDimension(_bleedController, 'Le fond perdu'),
+        copies: int.tryParse(_copiesController.text) ?? 0,
+        duplex: false,
+        orientation: _orientation,
+      );
+      final layout = PrintLayoutService.calculateLayout(
+        spec,
+        cutMarks: _cutMarks,
+      );
+      await PrintLayoutService.printMultiples(
+        spec: spec,
+        elements: _canvasElements,
+        cutMarks: _cutMarks,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'PDF prêt : ${layout.placements.length} exemplaires, ${layout.pageCount} feuille(s), '
+            '${layout.columns} × ${layout.rows} par feuille.',
+          ),
+        ),
+      );
+    } on ArgumentError catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Paramètres d’impression invalides : ${error.message}'),
+        ),
+      );
+    } on FileSystemException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Impossible de charger une image du projet : ${error.message}',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Échec de la génération PDF : $error')),
+      );
+    }
+  }
+
+  Future<void> _restoreFromBackup() async {
+    final file = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (file == null) return;
+    final repo = ProjectRepository();
+    await repo.restoreProjectFromArchive(File(file.path));
+    await _loadProjects();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Projet restauré depuis l’archive.')),
+      );
+    }
   }
 
   List<NavigationRailDestination> get _railDestinations => const [
@@ -428,7 +770,6 @@ class _PubulotronShellState extends State<PubulotronShell> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF101828),
         foregroundColor: Colors.white,
-        centerTitle: false,
         title: const Row(
           children: [
             Icon(Icons.smart_toy_rounded, color: Color(0xFF24C9C2)),
@@ -464,12 +805,12 @@ class _PubulotronShellState extends State<PubulotronShell> {
               child: Column(
                 children: [
                   SizedBox(
-                    height: 80,
+                    height: 82,
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 12,
-                        vertical: 8,
+                        vertical: 10,
                       ),
                       itemCount: _railDestinations.length,
                       itemBuilder: (context, index) {
@@ -482,7 +823,7 @@ class _PubulotronShellState extends State<PubulotronShell> {
                             decoration: BoxDecoration(
                               color: index == _selectedIndex
                                   ? const Color(0xFF7545FF)
-                                        .withValues(alpha: 0.16)
+                                        .withValues(alpha: 0.18)
                                   : const Color(0xFF1F2937),
                               borderRadius: BorderRadius.circular(16),
                             ),
@@ -496,7 +837,8 @@ class _PubulotronShellState extends State<PubulotronShell> {
                           ),
                         );
                       },
-                      separatorBuilder: (context, index) => const SizedBox(width: 8),
+                      separatorBuilder: (context, index) =>
+                          const SizedBox(width: 8),
                     ),
                   ),
                   Expanded(child: _buildDestinationBody()),
@@ -519,7 +861,7 @@ class _PubulotronShellState extends State<PubulotronShell> {
         decoration: BoxDecoration(
           color: const Color(0xFF111827),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: color.withValues(alpha: 0.20)),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
         ),
         child: Row(
           children: [
@@ -565,33 +907,26 @@ class _PubulotronShellState extends State<PubulotronShell> {
       width: 220,
       height: 190,
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
           colors: [Color(0xFF7545FF), Color(0xFF24C9C2)],
         ),
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.all(Radius.circular(24)),
       ),
       child: Stack(
         children: [
-          Positioned(
+          const Positioned(
             right: 12,
             top: 12,
-            child: Container(
-              width: 62,
-              height: 62,
-              decoration: const BoxDecoration(
-                color: Colors.white24,
-                shape: BoxShape.circle,
-              ),
-            ),
+            child: CircleAvatar(backgroundColor: Colors.white24, radius: 28),
           ),
           Align(
             alignment: Alignment.bottomLeft,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
+              children: const [
+                Text(
                   'RoboPub',
                   style: TextStyle(
                     color: Colors.white,
@@ -599,12 +934,10 @@ class _PubulotronShellState extends State<PubulotronShell> {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: 8),
                 Text(
                   'Le robot qui transforme\nvos idées en visuels brillants.',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.white70,
-                  ),
+                  style: TextStyle(color: Colors.white70),
                 ),
               ],
             ),
@@ -654,19 +987,19 @@ class _PubulotronShellState extends State<PubulotronShell> {
             children: [
               _buildDashboardCard(
                 title: 'Projets actifs',
-                value: '18',
+                value: '${_savedProjects.length}',
                 icon: Icons.folder_special_outlined,
                 color: const Color(0xFF7545FF),
               ),
               _buildDashboardCard(
                 title: 'Concepts IA',
-                value: '64',
+                value: '${_concepts.length}',
                 icon: Icons.auto_awesome,
                 color: const Color(0xFF24C9C2),
               ),
               _buildDashboardCard(
                 title: 'Impressions',
-                value: '11',
+                value: '12',
                 icon: Icons.print_outlined,
                 color: const Color(0xFFFFAA45),
               ),
@@ -692,18 +1025,18 @@ class _PubulotronShellState extends State<PubulotronShell> {
                         children: [
                           const Text(
                             'Brief créatif',
-                            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                           const SizedBox(height: 12),
                           TextField(
                             controller: _promptController,
                             minLines: 4,
                             maxLines: 6,
-                            style: const TextStyle(color: Colors.white),
                             decoration: InputDecoration(
-                              filled: true,
-                              fillColor: const Color(0xFF1B2436),
-                              hintText: 'Décrivez l’activité, le format, les couleurs et les éléments à inclure…',
+                              hintText: 'Décrivez le format, les couleurs, le message et les éléments à intégrer…',
                               hintStyle: const TextStyle(color: Colors.white38),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(18),
@@ -716,13 +1049,17 @@ class _PubulotronShellState extends State<PubulotronShell> {
                             runSpacing: 12,
                             children: [
                               ElevatedButton.icon(
-                                onPressed: () => setState(() => _selectedIndex = 1),
+                                onPressed: () =>
+                                    setState(() => _selectedIndex = 1),
                                 icon: const Icon(Icons.auto_awesome),
                                 label: const Text('Créer 4 concepts'),
                               ),
                               OutlinedButton.icon(
-                                onPressed: () => setState(() => _selectedIndex = 2),
-                                icon: const Icon(Icons.design_services_outlined),
+                                onPressed: () =>
+                                    setState(() => _selectedIndex = 2),
+                                icon: const Icon(
+                                  Icons.design_services_outlined,
+                                ),
                                 label: const Text('Ouvrir l’atelier'),
                               ),
                             ],
@@ -731,10 +1068,7 @@ class _PubulotronShellState extends State<PubulotronShell> {
                       ),
                     ),
                   ),
-                  if (wide) ...[
-                    const SizedBox(width: 20),
-                    _buildMascotCard(),
-                  ],
+                  if (wide) ...[const SizedBox(width: 20), _buildMascotCard()],
                 ],
               );
             },
@@ -756,7 +1090,7 @@ class _PubulotronShellState extends State<PubulotronShell> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Les concepts sont générés à partir d’un prompt, puis adaptés à votre identité de marque.',
+            'Générez des concepts réalistes, adaptés au brief, puis modifiez-les dans l’atelier.',
             style: Theme.of(context).textTheme.bodyLarge
                 ?.copyWith(color: Colors.white70),
           ),
@@ -764,7 +1098,9 @@ class _PubulotronShellState extends State<PubulotronShell> {
           Wrap(
             spacing: 12,
             runSpacing: 12,
-            children: _concepts.map((concept) {
+            children: _concepts.asMap().entries.map((entry) {
+              final index = entry.key;
+              final concept = entry.value;
               final selected = _selectedConcept == concept;
               return GestureDetector(
                 onTap: () => setState(() => _selectedConcept = concept),
@@ -781,13 +1117,21 @@ class _PubulotronShellState extends State<PubulotronShell> {
                           ),
                     borderRadius: BorderRadius.circular(22),
                     border: selected
-                        ? Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.5)
+                        ? Border.all(
+                            color: Colors.white.withValues(alpha: 0.8),
+                            width: 1.2,
+                          )
                         : null,
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
+                      _buildAiDesignPreview(concept, index),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           Text(
                             concept.title,
@@ -796,7 +1140,6 @@ class _PubulotronShellState extends State<PubulotronShell> {
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          const Spacer(),
                           Chip(label: Text(concept.style)),
                         ],
                       ),
@@ -805,7 +1148,7 @@ class _PubulotronShellState extends State<PubulotronShell> {
                         concept.summary,
                         style: const TextStyle(color: Colors.white70),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                       Text(
                         'Palette : ${concept.palette}',
                         style: const TextStyle(
@@ -821,19 +1164,27 @@ class _PubulotronShellState extends State<PubulotronShell> {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
+                      const SizedBox(height: 6),
+                      Text(
+                        concept.provider == 'local'
+                            ? 'Généré localement • disponible hors ligne'
+                            : 'Proposé par ${concept.provider}',
+                        style: const TextStyle(
+                          color: Colors.white60,
+                          fontSize: 12,
+                        ),
+                      ),
                       const SizedBox(height: 16),
-                      Row(
+                      Wrap(
+                        spacing: 8,
                         children: [
                           FilledButton.tonal(
-                            onPressed: () {
-                              setState(() => _selectedConcept = concept);
-                            },
-                            child: const Text('Choisir'),
+                            onPressed: () => _applyAiConcept(concept, index),
+                            child: const Text('Ouvrir ce design'),
                           ),
-                          const SizedBox(width: 8),
                           TextButton(
-                            onPressed: () => setState(() => _selectedIndex = 2),
-                            child: const Text('Éditer'),
+                            onPressed: () => _applyAiConcept(concept, index),
+                            child: const Text('Modifier'),
                           ),
                         ],
                       ),
@@ -854,7 +1205,81 @@ class _PubulotronShellState extends State<PubulotronShell> {
     );
   }
 
+  Widget _buildAiDesignPreview(DesignConcept concept, int variant) {
+    final elements = AiDesignService.createComposition(
+      concept: concept,
+      profile: _currentProfile(),
+      variant: variant,
+    );
+
+    return AspectRatio(
+      aspectRatio: 320 / 360,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: ColoredBox(
+          color: const Color(0xFF101828),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final scaleX = constraints.maxWidth / 320;
+              final scaleY = constraints.maxHeight / 360;
+              return Stack(
+                clipBehavior: Clip.hardEdge,
+                children: elements.map((element) {
+                  return Positioned(
+                    left: element.x * 320 * scaleX,
+                    top: element.y * 360 * scaleY,
+                    width: element.width * scaleX,
+                    height: element.height * scaleY,
+                    child: Transform.rotate(
+                      angle: element.rotation,
+                      child: Opacity(
+                        opacity: element.opacity.clamp(0.0, 1.0),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: element.color.withValues(
+                              alpha: element.kind == 'shape' ? 1 : 0.9,
+                            ),
+                            borderRadius: BorderRadius.circular(
+                              element.kind == 'image' ? 18 : 12,
+                            ),
+                          ),
+                          child: element.kind == 'shape'
+                              ? null
+                              : Padding(
+                                  padding: const EdgeInsets.all(2),
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text(
+                                      element.textContent ?? element.name,
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: element.fontSize,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildStudioScreen() {
+    final selectedElement =
+        _selectedCanvasIndex >= 0 &&
+            _selectedCanvasIndex < _canvasElements.length
+        ? _canvasElements[_selectedCanvasIndex]
+        : null;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -866,7 +1291,7 @@ class _PubulotronShellState extends State<PubulotronShell> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Éditez les éléments indépendamment, alignez-les et préparez votre visuel final.',
+            'Données visuelles et éléments modifiables, avec historique, étirement, rotation et alignements.',
             style: Theme.of(context).textTheme.bodyLarge
                 ?.copyWith(color: Colors.white70),
           ),
@@ -876,9 +1301,7 @@ class _PubulotronShellState extends State<PubulotronShell> {
             runSpacing: 8,
             children: [
               FilledButton.icon(
-                onPressed: () {
-                  setState(() => _selectedCanvasIndex = 0);
-                },
+                onPressed: _addTextElement,
                 icon: const Icon(Icons.title),
                 label: const Text('Texte'),
               ),
@@ -894,22 +1317,7 @@ class _PubulotronShellState extends State<PubulotronShell> {
                 ),
               ),
               FilledButton.tonal(
-                onPressed: () {
-                  setState(() {
-                    _canvasElements.add(
-                      CreativeElement(
-                        'Forme',
-                        0.35,
-                        0.45,
-                        140,
-                        70,
-                        const Color(0xFFFFAA45),
-                        'cta',
-                      ),
-                    );
-                    _selectedCanvasIndex = _canvasElements.length - 1;
-                  });
-                },
+                onPressed: _addShape,
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -942,6 +1350,39 @@ class _PubulotronShellState extends State<PubulotronShell> {
                 ),
               ),
               FilledButton.tonal(
+                onPressed: _duplicateSelected,
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.copy_all),
+                    SizedBox(width: 8),
+                    Text('Dupliquer'),
+                  ],
+                ),
+              ),
+              FilledButton.tonal(
+                onPressed: _deleteSelected,
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.delete_outline),
+                    SizedBox(width: 8),
+                    Text('Supprimer'),
+                  ],
+                ),
+              ),
+              FilledButton.tonal(
+                onPressed: _undo,
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.undo),
+                    SizedBox(width: 8),
+                    Text('Undo'),
+                  ],
+                ),
+              ),
+              FilledButton.tonal(
                 onPressed: _saveCurrentProject,
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
@@ -968,13 +1409,12 @@ class _PubulotronShellState extends State<PubulotronShell> {
             child: Stack(
               children: [
                 if (_showGrid)
-                  ...List.generate(
-                    12,
-                    (index) => Positioned.fill(
+                  ...List.generate(12, (index) {
+                    return Positioned.fill(
                       child: IgnorePointer(
                         child: LayoutBuilder(
                           builder: (context, constraints) {
-                            final x = (constraints.maxWidth / 12) * index;
+                            final x = constraints.maxWidth / 12 * index;
                             return Container(
                               decoration: BoxDecoration(
                                 border: Border(
@@ -988,8 +1428,8 @@ class _PubulotronShellState extends State<PubulotronShell> {
                           },
                         ),
                       ),
-                    ),
-                  ),
+                    );
+                  }),
                 if (_showGuides)
                   Positioned(
                     left: 0,
@@ -1007,73 +1447,79 @@ class _PubulotronShellState extends State<PubulotronShell> {
                   return Positioned(
                     left: element.x * 320,
                     top: element.y * 360,
-                    width: element.width.toDouble(),
-                    height: element.height.toDouble(),
+                    width: element.width,
+                    height: element.height,
                     child: GestureDetector(
                       onScaleUpdate: (details) {
+                        if (element.locked) return;
                         setState(() {
-                          element.width = (element.width * details.scale).clamp(40.0, 340.0);
-                          element.height = (element.height * details.scale).clamp(30.0, 260.0);
-                          element.rotation += details.rotation * 0.02;
+                          element.width = (element.width * details.scale).clamp(
+                            40.0,
+                            340.0,
+                          );
+                          element.height = (element.height * details.scale)
+                              .clamp(30.0, 260.0);
+                          element.rotation += details.rotation * 0.08;
                         });
                       },
-                      onTap: () {
-                        setState(() => _selectedCanvasIndex = index);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Élément sélectionné : ${element.name}',
-                            ),
-                          ),
-                        );
-                      },
+                      onTap: () => setState(() => _selectedCanvasIndex = index),
                       child: Listener(
                         onPointerMove: (event) {
-                          if (!selected) return;
+                          if (!selected || element.locked) return;
                           setState(() {
-                            element.x = (element.x + event.delta.dx / 320).clamp(0.0, 1.0);
-                            element.y = (element.y + event.delta.dy / 360).clamp(0.0, 1.0);
+                            element.x = (element.x + event.delta.dx / 320)
+                                .clamp(0.0, 1.0);
+                            element.y = (element.y + event.delta.dy / 360)
+                                .clamp(0.0, 1.0);
                           });
                         },
                         child: Transform.rotate(
                           angle: element.rotation,
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 220),
-                            padding: const EdgeInsets.all(10),
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: element.color,
-                              borderRadius: BorderRadius.circular(
-                                element.kind == 'image' ? 18 : 12,
+                          child: Opacity(
+                            opacity: element.opacity,
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 220),
+                              padding: const EdgeInsets.all(10),
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: element.kind == 'shape'
+                                    ? element.color
+                                    : element.color.withValues(alpha: 0.9),
+                                borderRadius: BorderRadius.circular(
+                                  element.kind == 'image' ? 18 : 12,
+                                ),
+                                border: selected
+                                    ? Border.all(color: Colors.white, width: 2)
+                                    : null,
                               ),
-                              border: selected
-                                  ? Border.all(color: Colors.white, width: 2)
-                                  : null,
-                            ),
-                            child: element.kind == 'image'
-                                ? (element.imagePath != null
-                                    ? ClipRRect(
-                                        borderRadius: BorderRadius.circular(18),
-                                        child: Image.file(
-                                          File(element.imagePath!),
-                                          fit: BoxFit.cover,
-                                          width: double.infinity,
-                                          height: double.infinity,
-                                        ),
-                                      )
-                                    : const Icon(
-                                        Icons.image_outlined,
+                              child: element.kind == 'image'
+                                  ? (element.imagePath != null
+                                        ? ClipRRect(
+                                            borderRadius: BorderRadius.circular(
+                                              18,
+                                            ),
+                                            child: Image.file(
+                                              File(element.imagePath!),
+                                              fit: BoxFit.cover,
+                                              width: double.infinity,
+                                              height: double.infinity,
+                                            ),
+                                          )
+                                        : const Icon(
+                                            Icons.image_outlined,
+                                            color: Colors.white,
+                                            size: 48,
+                                          ))
+                                  : Text(
+                                      element.textContent ?? element.name,
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
                                         color: Colors.white,
-                                        size: 48,
-                                      ))
-                                : Text(
-                                    element.name,
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w700,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: element.fontSize,
+                                      ),
                                     ),
-                                  ),
+                            ),
                           ),
                         ),
                       ),
@@ -1083,7 +1529,152 @@ class _PubulotronShellState extends State<PubulotronShell> {
               ],
             ),
           ),
+          const SizedBox(height: 20),
+          if (selectedElement != null)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: const Color(0xFF111827),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Sélection : ${selectedElement.name}',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    onChanged: (value) =>
+                        setState(() => selectedElement.name = value),
+                    decoration: const InputDecoration(
+                      labelText: 'Nom de l’élément',
+                    ),
+                    controller:
+                        TextEditingController(text: selectedElement.name)
+                          ..selection = TextSelection.collapsed(
+                            offset: selectedElement.name.length,
+                          ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Slider(
+                          value: selectedElement.opacity,
+                          min: 0.2,
+                          max: 1,
+                          onChanged: (value) =>
+                              setState(() => selectedElement.opacity = value),
+                        ),
+                      ),
+                      Text(
+                        '${selectedElement.opacity.toStringAsFixed(2)} op.',
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: () => setState(
+                          () =>
+                              selectedElement.locked = !selectedElement.locked,
+                        ),
+                        icon: Icon(
+                          selectedElement.locked ? Icons.lock : Icons.lock_open,
+                        ),
+                        label: Text(
+                          selectedElement.locked
+                              ? 'Verrouillé'
+                              : 'Déverrouiller',
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        onPressed: () =>
+                            setState(() => selectedElement.rotation += 0.2),
+                        icon: const Icon(Icons.rotate_right),
+                        label: const Text('Tourner'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildTemplatePreview(TemplateCard template) {
+    final elements = TemplateService.createElements(
+      template.id,
+      _currentProfile(),
+    );
+
+    return AspectRatio(
+      aspectRatio: 320 / 360,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: ColoredBox(
+          color: const Color(0xFF101828),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final scaleX = constraints.maxWidth / 320;
+              final scaleY = constraints.maxHeight / 360;
+              return Stack(
+                clipBehavior: Clip.hardEdge,
+                children: elements.map((element) {
+                  return Positioned(
+                    left: element.x * 320 * scaleX,
+                    top: element.y * 360 * scaleY,
+                    width: element.width * scaleX,
+                    height: element.height * scaleY,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: element.color.withValues(
+                          alpha: element.kind == 'shape' ? 1 : 0.9,
+                        ),
+                        borderRadius: BorderRadius.circular(
+                          element.kind == 'image' ? 18 : 12,
+                        ),
+                      ),
+                      child: element.kind == 'shape'
+                          ? null
+                          : element.kind == 'image'
+                          ? Icon(
+                              Icons.add_photo_alternate_outlined,
+                              color: Colors.white.withValues(alpha: 0.8),
+                              size: 22,
+                            )
+                          : Padding(
+                              padding: const EdgeInsets.all(2),
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  element.textContent ?? element.name,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+          ),
+        ),
       ),
     );
   }
@@ -1100,9 +1691,15 @@ class _PubulotronShellState extends State<PubulotronShell> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Partir d’un modèle personnalisable ou d’une page blanche.',
+            'Chaque modèle charge une composition différente, entièrement modifiable dans l’atelier.',
             style: Theme.of(context).textTheme.bodyLarge
                 ?.copyWith(color: Colors.white70),
+          ),
+          const SizedBox(height: 20),
+          OutlinedButton.icon(
+            onPressed: _startBlankCanvas,
+            icon: const Icon(Icons.note_add_outlined),
+            label: const Text('Commencer avec une page blanche'),
           ),
           const SizedBox(height: 20),
           Wrap(
@@ -1119,11 +1716,13 @@ class _PubulotronShellState extends State<PubulotronShell> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    _buildTemplatePreview(template),
+                    const SizedBox(height: 14),
                     Row(
                       children: [
                         Container(
-                          width: 42,
-                          height: 42,
+                          width: 36,
+                          height: 36,
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               colors: [
@@ -1132,6 +1731,11 @@ class _PubulotronShellState extends State<PubulotronShell> {
                               ],
                             ),
                             borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            template.icon,
+                            color: Colors.white,
+                            size: 20,
                           ),
                         ),
                         const Spacer(),
@@ -1151,9 +1755,17 @@ class _PubulotronShellState extends State<PubulotronShell> {
                       template.category,
                       style: const TextStyle(color: Colors.white70),
                     ),
+                    const SizedBox(height: 6),
+                    Text(
+                      template.description,
+                      style: const TextStyle(
+                        color: Colors.white60,
+                        fontSize: 12,
+                      ),
+                    ),
                     const SizedBox(height: 14),
                     FilledButton.tonal(
-                      onPressed: () {},
+                      onPressed: () => _applyTemplate(template),
                       child: const Text('Utiliser ce modèle'),
                     ),
                   ],
@@ -1167,17 +1779,9 @@ class _PubulotronShellState extends State<PubulotronShell> {
   }
 
   Widget _buildProjectsScreen() {
-    final projectList = _savedProjects.isNotEmpty
-        ? _savedProjects
-        : _projects.map((project) => GraphicProject(
-              id: project.title,
-              name: project.title,
-              description: project.status,
-              createdAt: DateTime.now(),
-              updatedAt: DateTime.now(),
-              elements: const [],
-            )).toList();
-
+    final projectList = _savedProjects.isEmpty
+        ? <GraphicProject>[]
+        : _savedProjects;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -1188,61 +1792,81 @@ class _PubulotronShellState extends State<PubulotronShell> {
             style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 20),
-          ...projectList.map((project) {
-            return Container(
-              margin: const EdgeInsets.only(bottom: 16),
+          if (projectList.isEmpty)
+            Container(
+              width: double.infinity,
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
                 color: const Color(0xFF111827),
-                borderRadius: BorderRadius.circular(22),
+                borderRadius: BorderRadius.circular(20),
               ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 54,
-                    height: 54,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF7545FF), Color(0xFF24C9C2)],
+              child: const Text(
+                'Aucun projet enregistré pour le moment. Sauvegardez votre première création pour la retrouver ici.',
+              ),
+            )
+          else
+            ...projectList.map((project) {
+              return Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF111827),
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 54,
+                      height: 54,
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF7545FF), Color(0xFF24C9C2)],
+                        ),
+                        borderRadius: BorderRadius.all(Radius.circular(18)),
                       ),
-                      borderRadius: BorderRadius.circular(18),
+                      child: const Icon(
+                        Icons.design_services,
+                        color: Colors.white,
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.design_services,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          project.name,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            project.name,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          project.description,
-                          style: const TextStyle(color: Colors.white70),
-                        ),
-                      ],
+                          const SizedBox(height: 4),
+                          Text(
+                            project.description,
+                            style: const TextStyle(color: Colors.white70),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  IconButton(
-                    onPressed: () async {
-                      await _projectRepository.deleteProject(project.id);
-                      await _loadProjects();
-                    },
-                    icon: const Icon(Icons.delete_outline),
-                  ),
-                ],
-              ),
-            );
-          }),
+                    IconButton(
+                      onPressed: () async {
+                        await _projectRepository.deleteProject(project.id);
+                        await _loadProjects();
+                      },
+                      icon: const Icon(Icons.delete_outline),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: _restoreFromBackup,
+            icon: const Icon(Icons.restore),
+            label: const Text('Restaurer archive ZIP'),
+          ),
         ],
       ),
     );
@@ -1257,7 +1881,6 @@ class _PubulotronShellState extends State<PubulotronShell> {
       'Mini dépliant',
       'Carte fidélité',
     ];
-
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -1269,7 +1892,7 @@ class _PubulotronShellState extends State<PubulotronShell> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Activez une campagne prête à l’emploi: supports, visuels, textes et versions web.',
+            'Générez une campagne cohérente sur plusieurs supports à partir d’un même brief.',
             style: Theme.of(context).textTheme.bodyLarge
                 ?.copyWith(color: Colors.white70),
           ),
@@ -1322,6 +1945,17 @@ class _PubulotronShellState extends State<PubulotronShell> {
   }
 
   Widget _buildPrintScreen() {
+    Widget numberField(TextEditingController controller, String label) {
+      return SizedBox(
+        width: 145,
+        child: TextField(
+          controller: controller,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: InputDecoration(labelText: label),
+        ),
+      );
+    }
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -1333,7 +1967,7 @@ class _PubulotronShellState extends State<PubulotronShell> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Prévisualisation du document, réglages et export professionnel.',
+            'Le PDF reprend les calques de la création et les place à l’échelle sur les feuilles.',
             style: Theme.of(context).textTheme.bodyLarge
                 ?.copyWith(color: Colors.white70),
           ),
@@ -1348,49 +1982,146 @@ class _PubulotronShellState extends State<PubulotronShell> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Prévisualisation',
+                  'Aperçu de la création actuelle',
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(22),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF7545FF), Color(0xFF24C9C2)],
-                    ),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _companyController.text,
-                        style: const TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    child: AspectRatio(
+                      aspectRatio: 85 / 55,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final scaleX = constraints.maxWidth / 320;
+                            final scaleY = constraints.maxHeight / 360;
+                            return ColoredBox(
+                              color: const Color(0xFF101828),
+                              child: Stack(
+                                clipBehavior: Clip.hardEdge,
+                                children: _canvasElements.map((element) {
+                                  return Positioned(
+                                    left: element.x * 320 * scaleX,
+                                    top: element.y * 360 * scaleY,
+                                    width: element.width * scaleX,
+                                    height: element.height * scaleY,
+                                    child: Transform.rotate(
+                                      angle: element.rotation,
+                                      child: Opacity(
+                                        opacity: element.opacity.clamp(
+                                          0.0,
+                                          1.0,
+                                        ),
+                                        child:
+                                            element.kind == 'image' &&
+                                                element.imagePath != null
+                                            ? Image.file(
+                                                File(element.imagePath!),
+                                                fit: BoxFit.cover,
+                                              )
+                                            : Container(
+                                                alignment: Alignment.center,
+                                                padding: const EdgeInsets.all(
+                                                  4,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: element.color,
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                ),
+                                                child: element.kind == 'shape'
+                                                    ? null
+                                                    : Text(
+                                                        element.textContent ??
+                                                            element.name,
+                                                        textAlign:
+                                                            TextAlign.center,
+                                                        style: TextStyle(
+                                                          color: Colors.white,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                          fontSize:
+                                                              element.fontSize,
+                                                        ),
+                                                      ),
+                                              ),
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            );
+                          },
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _sloganController.text,
-                        style: const TextStyle(color: Colors.white70),
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          const Icon(Icons.phone, color: Colors.white),
-                          const SizedBox(width: 8),
-                          Text(
-                            _phoneController.text,
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                        ],
-                      ),
-                    ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 20),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 145,
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _paperSize,
+                        decoration: const InputDecoration(labelText: 'Papier'),
+                        items: const ['A4', 'A3', 'A5', 'Lettre US']
+                            .map(
+                              (paper) => DropdownMenuItem(
+                                value: paper,
+                                child: Text(paper),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) {
+                          if (value != null) setState(() => _paperSize = value);
+                        },
+                      ),
+                    ),
+                    SizedBox(
+                      width: 145,
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _orientation,
+                        decoration: const InputDecoration(
+                          labelText: 'Orientation',
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'portrait',
+                            child: Text('Portrait'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'landscape',
+                            child: Text('Paysage'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            setState(() => _orientation = value);
+                          }
+                        },
+                      ),
+                    ),
+                    numberField(_copiesController, 'Exemplaires'),
+                    numberField(_cardWidthController, 'Largeur (mm)'),
+                    numberField(_cardHeightController, 'Hauteur (mm)'),
+                    numberField(_marginController, 'Marge (mm)'),
+                    numberField(_gapController, 'Espacement (mm)'),
+                    numberField(_bleedController, 'Fond perdu (mm)'),
+                  ],
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Traits de découpe'),
+                  value: _cutMarks,
+                  onChanged: (value) => setState(() => _cutMarks = value),
+                ),
+                const SizedBox(height: 8),
                 FilledButton.icon(
                   onPressed: _exportPdf,
                   icon: const Icon(Icons.picture_as_pdf_outlined),
@@ -1449,6 +2180,12 @@ class _PubulotronShellState extends State<PubulotronShell> {
                       labelText: 'Site internet',
                     ),
                   ),
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    onPressed: _saveProfile,
+                    icon: const Icon(Icons.save),
+                    label: const Text('Sauvegarder le profil'),
+                  ),
                 ],
               ),
             ),
@@ -1494,7 +2231,10 @@ class _PubulotronShellState extends State<PubulotronShell> {
                         .toList(),
                     onChanged: (value) {
                       if (value != null) {
-                        setState(() => _selectedProvider = value);
+                        setState(() {
+                          _selectedProvider = value;
+                          _aiConnectionMessage = null;
+                        });
                       }
                     },
                   ),
@@ -1505,16 +2245,57 @@ class _PubulotronShellState extends State<PubulotronShell> {
                   ),
                   const SizedBox(height: 8),
                   TextField(
+                    controller: _apiKeyController,
                     obscureText: true,
-                    onChanged: (value) => _apiKey = value,
+                    onChanged: (value) {
+                      _apiKey = value;
+                      setState(() => _aiConnectionMessage = null);
+                    },
                     decoration: const InputDecoration(hintText: 'sk-…'),
                   ),
-                  const SizedBox(height: 16),
-                  FilledButton.icon(
-                    onPressed: _saveApiKey,
-                    icon: const Icon(Icons.lock_outline),
-                    label: const Text('Sauvegarder la clé'),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'La clé et le fournisseur sont conservés localement dans le stockage sécurisé.',
+                    style: TextStyle(color: Colors.white70),
                   ),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      FilledButton.icon(
+                        onPressed: _saveAiSettings,
+                        icon: const Icon(Icons.lock_outline),
+                        label: const Text('Sauvegarder les paramètres'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _isTestingAiConnection
+                            ? null
+                            : _testAiConnection,
+                        icon: _isTestingAiConnection
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.wifi_tethering),
+                        label: const Text('Tester la connexion'),
+                      ),
+                    ],
+                  ),
+                  if (_aiConnectionMessage != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      _aiConnectionMessage!,
+                      style: TextStyle(
+                        color: _aiConnectionMessage!.startsWith('Connexion')
+                            ? const Color(0xFF24C9C2)
+                            : const Color(0xFFFF6384),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1530,6 +2311,7 @@ class _PubulotronShellState extends State<PubulotronShell> {
       '2. Générez 4 concepts IA et choisissez le meilleur design.',
       '3. Ajustez les éléments directement dans l’atelier graphique.',
       '4. Exportez vers PDF, partagez sur les réseaux ou imprimez votre visuel.',
+      '5. Sauvegardez régulièrement votre projet pour retrouver vos créations.',
     ];
 
     return SingleChildScrollView(
@@ -1558,339 +2340,6 @@ class _PubulotronShellState extends State<PubulotronShell> {
           ),
         ],
       ),
-    );
-  }
-}
-
-class ProjectRepository {
-  static Database? _database;
-
-  Future<Database> get database async {
-    if (_database != null) return _database!;
-    final dir = await getApplicationDocumentsDirectory();
-    final path = p.join(dir.path, 'pubulotron_projects.db');
-    _database = await openDatabase(
-      path,
-      version: 1,
-      onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE projects (
-            id TEXT PRIMARY KEY,
-            name TEXT,
-            description TEXT,
-            created_at TEXT,
-            updated_at TEXT,
-            payload TEXT
-          )
-        ''');
-      },
-    );
-    return _database!;
-  }
-
-  Future<void> saveProject(GraphicProject project) async {
-    final db = await database;
-    await db.insert(
-      'projects',
-      {
-        'id': project.id,
-        'name': project.name,
-        'description': project.description,
-        'created_at': project.createdAt.toIso8601String(),
-        'updated_at': project.updatedAt.toIso8601String(),
-        'payload': jsonEncode(project.toJson()),
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-  }
-
-  Future<List<GraphicProject>> loadProjects() async {
-    final db = await database;
-    final rows = await db.query('projects', orderBy: 'updated_at DESC');
-    return rows
-        .map((row) => GraphicProject.fromJson(jsonDecode(row['payload'] as String)))
-        .toList();
-  }
-
-  Future<void> deleteProject(String id) async {
-    final db = await database;
-    await db.delete('projects', where: 'id = ?', whereArgs: [id]);
-  }
-
-  Future<void> exportArchive(String projectId) async {
-    final db = await database;
-    final rows = await db.query(
-      'projects',
-      where: 'id = ?',
-      whereArgs: [projectId],
-    );
-    if (rows.isEmpty) return;
-
-    final projectJson = jsonDecode(rows.first['payload'] as String) as Map<String, dynamic>;
-    final project = GraphicProject.fromJson(projectJson);
-    final archive = Archive();
-    final projectPayload = utf8.encode(jsonEncode(project.toJson()));
-    archive.addFile(ArchiveFile('project.json', projectPayload.length, projectPayload));
-
-    for (final element in project.elements) {
-      if (element.imagePath == null || !File(element.imagePath!).existsSync()) continue;
-      final bytes = await File(element.imagePath!).readAsBytes();
-      final fileName = p.basename(element.imagePath!);
-      archive.addFile(ArchiveFile('assets/$fileName', bytes.length, bytes));
-    }
-
-    final zip = ZipEncoder().encode(archive);
-    final dir = await getApplicationDocumentsDirectory();
-    final outputFile = File(p.join(dir.path, '${project.name}.zip'));
-    await outputFile.writeAsBytes(zip);
-  }
-
-  Future<String?> exportAllProjectsArchive() async {
-    final projects = await loadProjects();
-    if (projects.isEmpty) return null;
-
-    final archive = Archive();
-    for (final project in projects) {
-      final projectPayload = utf8.encode(jsonEncode(project.toJson()));
-      archive.addFile(
-        ArchiveFile('projects/${project.name}.json', projectPayload.length, projectPayload),
-      );
-      for (final element in project.elements) {
-        if (element.imagePath == null || !File(element.imagePath!).existsSync()) continue;
-        final bytes = await File(element.imagePath!).readAsBytes();
-        final fileName = p.basename(element.imagePath!);
-        archive.addFile(ArchiveFile('projects/${project.name}/assets/$fileName', bytes.length, bytes));
-      }
-    }
-
-    final zip = ZipEncoder().encode(archive);
-    final dir = await getApplicationDocumentsDirectory();
-    final outputFile = File(p.join(dir.path, 'pubulotron_projects_export.zip'));
-    await outputFile.writeAsBytes(zip);
-    return outputFile.path;
-  }
-}
-
-class AiService {
-  static Future<List<DesignConcept>> generateConcepts(
-    String prompt,
-    String provider,
-    String apiKey,
-  ) async {
-    final lower = prompt.toLowerCase();
-    final hasBlue = lower.contains('bleu') || lower.contains('cyan') || lower.contains('electric');
-    final hasRose = lower.contains('rose') || lower.contains('pink') || lower.contains('fuchsia');
-    final hasOrange = lower.contains('orange') || lower.contains('jaune');
-    final hasGreen = lower.contains('vert') || lower.contains('nature') || lower.contains('jardin');
-    final palette = hasBlue
-        ? 'Bleu électrique / violet'
-        : hasGreen
-            ? 'Vert / blanc / orange'
-            : hasRose
-                ? 'Rose / violet / bleu nuit'
-                : hasOrange
-                    ? 'Orange / noir / blanc'
-                    : 'Violet / turquoise / blanc';
-
-    if (apiKey.isNotEmpty && provider == 'OpenAI') {
-      try {
-        return [
-          DesignConcept(
-            title: 'Concept IA OpenAI',
-            style: 'AI direction',
-            palette: palette,
-            slogan: 'Visuel aligné sur votre brief.',
-            summary: 'Génération dynamique connectée au fournisseur OpenAI.',
-          ),
-          DesignConcept(
-            title: 'Variant premium',
-            style: 'Premium',
-            palette: palette,
-            slogan: 'L’impact de la conversion locale.',
-            summary: 'Variation orientée conversion pour supports print et web.',
-          ),
-          DesignConcept(
-            title: 'Variant motion',
-            style: 'Motion',
-            palette: palette,
-            slogan: 'Une identité qui capte l’attention.',
-            summary: 'Approche plus dynamique et visuelle pour réseaux sociaux.',
-          ),
-        ];
-      } catch (_) {}
-    }
-
-    return [
-      DesignConcept(
-        title: 'Nexus Draft',
-        style: 'Futuriste',
-        palette: palette,
-        slogan: 'Votre message monte en puissance.',
-        summary: 'Composition orientée impact visuel et lisibilité.',
-      ),
-      DesignConcept(
-        title: 'Signal Lab',
-        style: 'Premium',
-        palette: palette,
-        slogan: 'La présence professionnelle qui rassure.',
-        summary: 'Mise en scène premium pour services et artisans.',
-      ),
-      DesignConcept(
-        title: 'Pixel Boost',
-        style: 'Digital',
-        palette: palette,
-        slogan: 'Une identité qui se démarque.',
-        summary: 'Approche dynamique, pensée pour les réseaux et flyers.',
-      ),
-      DesignConcept(
-        title: 'Robo Pop',
-        style: 'Pop',
-        palette: palette,
-        slogan: 'Des idées qui parlent avant le premier clic.',
-        summary: 'Design plus coloré et immédiat pour la conversion.',
-      ),
-    ];
-  }
-}
-
-class GraphicProject {
-  GraphicProject({
-    required this.id,
-    required this.name,
-    required this.description,
-    required this.createdAt,
-    required this.updatedAt,
-    required this.elements,
-  });
-
-  final String id;
-  final String name;
-  final String description;
-  final DateTime createdAt;
-  final DateTime updatedAt;
-  final List<CreativeElement> elements;
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'description': description,
-        'createdAt': createdAt.toIso8601String(),
-        'updatedAt': updatedAt.toIso8601String(),
-        'elements': elements.map((e) => e.toJson()).toList(),
-      };
-
-  factory GraphicProject.fromJson(Map<String, dynamic> json) {
-    return GraphicProject(
-      id: json['id'] as String? ?? Uuid().v4(),
-      name: json['name'] as String? ?? 'Projet',
-      description: json['description'] as String? ?? '',
-      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
-      updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? '') ?? DateTime.now(),
-      elements: ((json['elements'] ?? const []) as List)
-          .map((e) => CreativeElement.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList(),
-    );
-  }
-}
-
-class DesignConcept {
-  DesignConcept({
-    required this.title,
-    required this.style,
-    required this.palette,
-    required this.slogan,
-    required this.summary,
-  });
-
-  final String title;
-  final String style;
-  final String palette;
-  final String slogan;
-  final String summary;
-}
-
-class TemplateCard {
-  TemplateCard({
-    required this.title,
-    required this.category,
-    required this.accent,
-    required this.tag,
-  });
-
-  final String title;
-  final String category;
-  final Color accent;
-  final String tag;
-}
-
-class ProjectCardData {
-  ProjectCardData({
-    required this.title,
-    required this.status,
-    required this.updated,
-    required this.accent,
-  });
-
-  final String title;
-  final String status;
-  final String updated;
-  final Color accent;
-}
-
-class CreativeElement {
-  CreativeElement(
-    this.name,
-    this.x,
-    this.y,
-    this.width,
-    this.height,
-    this.color,
-    this.kind, {
-    this.rotation = 0,
-    this.opacity = 1,
-    this.imagePath,
-    this.locked = false,
-  });
-
-  String name;
-  double x;
-  double y;
-  double width;
-  double height;
-  Color color;
-  String kind;
-  double rotation;
-  double opacity;
-  String? imagePath;
-  bool locked;
-
-  Map<String, dynamic> toJson() => {
-        'name': name,
-        'x': x,
-        'y': y,
-        'width': width,
-        'height': height,
-        'rotation': rotation,
-        'opacity': opacity,
-        'color': color.toARGB32(),
-        'kind': kind,
-        'imagePath': imagePath,
-        'locked': locked,
-      };
-
-  factory CreativeElement.fromJson(Map<String, dynamic> json) {
-    return CreativeElement(
-      json['name'] as String? ?? 'Element',
-      (json['x'] as num?)?.toDouble() ?? 0.0,
-      (json['y'] as num?)?.toDouble() ?? 0.0,
-      (json['width'] as num?)?.toDouble() ?? 100,
-      (json['height'] as num?)?.toDouble() ?? 50,
-      Color(json['color'] as int? ?? 0xFF7545FF),
-      json['kind'] as String? ?? 'text',
-      rotation: (json['rotation'] as num?)?.toDouble() ?? 0,
-      opacity: (json['opacity'] as num?)?.toDouble() ?? 1,
-      imagePath: json['imagePath'] as String?,
-      locked: json['locked'] as bool? ?? false,
     );
   }
 }

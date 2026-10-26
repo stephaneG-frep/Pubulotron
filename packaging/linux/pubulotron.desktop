@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Pubulotron
+Comment=Studio graphique publicitaire
+Exec=pubulotron
+Terminal=false
+Type=Application
+Categories=Graphics;Office;

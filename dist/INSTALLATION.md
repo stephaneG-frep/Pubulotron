@@ -1,45 +1,26 @@
 # Installation de Pubulotron
 
-## Prérequis
+## Android ARM64
 
-- Android : appareil ARM64 avec Android 8 ou plus.
-- Linux : Ubuntu / Lubuntu 22.04+ ou distribution Debian compatible.
-- SDK Flutter si vous souhaitez recompiler le projet.
+1. Transférer `Pubulotron-android-arm64.apk` sur le téléphone.
+2. Ouvrir le fichier et autoriser l'installation depuis cette source si Android le demande.
+3. Installer puis lancer Pubulotron.
 
-## Android APK
+## Linux amd64
 
-1. Copier le fichier `Pubulotron-android-arm64.apk` depuis le dossier `dist/` vers le téléphone.
-2. Ouvrir le fichier depuis le gestionnaire de fichiers.
-3. Autoriser l'installation depuis une source inconnue.
-4. Installer puis lancer Pubulotron.
-
-## Linux (bundle binaire)
-
-Le projet a été compilé en bundle Linux, mais un vrai paquet Debian (`.deb`) n'a pas pu être créé dans cet environnement car la commande de packaging système a été bloquée par des restrictions de permissions. Le binaire généré est disponible dans le dossier de build Flutter :
-
-`build/linux/x64/release/bundle/pubulotron`
-
-Pour créer un `.deb` sur une machine autorisée :
+Le paquet Debian installe le bundle Flutter complet, son lanceur et un raccourci d'application. Il nécessite Ubuntu ou une distribution Debian compatible sur architecture amd64, avec GTK 3 et libsecret disponibles.
 
 ```bash
-mkdir -p /tmp/pubulotron-deb/usr/bin
-cp build/linux/x64/release/bundle/pubulotron /tmp/pubulotron-deb/usr/bin/pubulotron
-chmod 755 /tmp/pubulotron-deb/usr/bin/pubulotron
-mkdir -p /tmp/pubulotron-deb/DEBIAN
-cat > /tmp/pubulotron-deb/DEBIAN/control <<'EOF'
-Package: pubulotron
-Version: 1.0.0
-Section: graphics
-Priority: optional
-Architecture: amd64
-Maintainer: Pubulotron <contact@pubulotron.local>
-Description: Studio graphique intelligent pour cartes, flyers et visuels publicitaires.
-EOF
-
-dpkg-deb --build /tmp/pubulotron-deb ./Pubulotron-linux.deb
+sudo apt install ./Pubulotron-linux-amd64.deb
 ```
 
-## Reconstruction depuis le code source
+L'application est ensuite accessible depuis le menu graphique ou en lançant `pubulotron` dans un terminal.
+
+Le bundle Linux non empaqueté est également produit par `flutter build linux --release` dans `build/linux/x64/release/bundle/`.
+
+## Compilation depuis les sources
+
+Prérequis : Flutter installé, SDK Android pour l'APK et les dépendances de compilation Flutter Linux pour le bundle desktop.
 
 ```bash
 flutter pub get
@@ -47,4 +28,7 @@ flutter analyze
 flutter test
 flutter build apk --release --target-platform android-arm64
 flutter build linux --release
+bash tool/build_linux_deb.sh
 ```
+
+Le paquet `.deb` de cette livraison cible `amd64`; il ne convient pas aux systèmes Linux ARM64.

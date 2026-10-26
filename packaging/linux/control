@@ -1,0 +1,8 @@
+Package: pubulotron
+Version: 1.0.0
+Section: graphics
+Priority: optional
+Architecture: amd64
+Maintainer: Pubulotron <contact@pubulotron.local>
+Depends: libgtk-3-0, libsecret-1-0
+Description: Studio graphique intelligent pour cartes, flyers et visuels publicitaires.
