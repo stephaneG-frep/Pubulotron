@@ -1,0 +1,134 @@
+import 'dart:io';
+import 'dart:ui' as ui;
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
+import 'package:pubulotron/app/providers.dart';
+import 'package:pubulotron/layout/template_catalog.dart';
+import 'package:pubulotron/models/business_profile.dart';
+import 'package:pubulotron/models/project.dart';
+import 'package:pubulotron/ui/theme.dart';
+import 'package:pubulotron/ui/widgets/robopub.dart';
+
+import 'helpers/app_harness.dart';
+import 'helpers/test_support.dart';
+
+/// Captures d'écran de chaque rubrique, pour contrôle visuel.
+/// Lancement : SCREENSHOTS_OUT=dossier flutter test test/visual_tour_test.dart
+final _out = Platform.environment['SCREENSHOTS_OUT'];
+
+Future<void> _capture(WidgetTester tester, String name) async {
+  await tester.pump(const Duration(milliseconds: 400));
+  final element = tester.binding.rootElement!;
+  final image = await captureImage(element);
+  final bytes = await tester.runAsync(
+    () => image.toByteData(format: ui.ImageByteFormat.png),
+  );
+  File(p.join(_out!, '$name.png'))
+      .writeAsBytesSync(bytes!.buffer.asUint8List());
+}
+
+Future<void> _visitAll(WidgetTester tester, Harness h, String prefix) async {
+  final nav = h.container.read(navigationProvider.notifier);
+  for (final section in AppSection.values) {
+    nav.go(section);
+    await settle(tester, rounds: 3);
+    await _capture(
+      tester,
+      '${prefix}_${section.index.toString().padLeft(2, '0')}_${section.name}',
+    );
+  }
+}
+
+void main() {
+  testWidgets('visual tour (desktop and phone)', skip: _out == null, (
+    tester,
+  ) async {
+    Directory(_out!).createSync(recursive: true);
+    await tester.runAsync(loadAppFonts);
+    final h = await pumpPubulotron(tester);
+    final profile = BusinessProfile.example();
+    await tester.runAsync(() async {
+      await h.services.profiles.save(profile);
+      for (final id in ['it-card', 'garden-flyer', 'shop-poster']) {
+        final t = TemplateCatalog.byId(id)!;
+        await h.services.projects.save(
+          Project(
+            name: t.title,
+            document: TemplateCatalog.instantiate(t, profile: profile),
+          ),
+        );
+      }
+    });
+    await h.container.read(profilesProvider.notifier).reload();
+    await h.container.read(projectsProvider.notifier).refresh();
+    await settle(tester);
+    await _visitAll(tester, h, 'desktop');
+
+    // Atelier avec un projet ouvert et un élément sélectionné.
+    final projects = h.container.read(projectsProvider).value!;
+    final controller = h.container
+        .read(editorProvider.notifier)
+        .open(projects.last);
+    h.container.read(navigationProvider.notifier).go(AppSection.studio);
+    await settle(tester);
+    controller.select(
+      controller.page.elements.firstWhere((e) => e.role == 'headline').id,
+    );
+    await settle(tester);
+    await _capture(tester, 'desktop_studio_selection');
+
+    // Format téléphone.
+    tester.view.physicalSize = const Size(412, 892);
+    await settle(tester);
+    await _capture(tester, 'phone_studio');
+    h.container.read(navigationProvider.notifier).go(AppSection.home);
+    await settle(tester);
+    await _capture(tester, 'phone_home');
+    h.container.read(navigationProvider.notifier).go(AppSection.print);
+    await settle(tester);
+    await _capture(tester, 'phone_print');
+  });
+
+  testWidgets('application icon', skip: _out == null, (tester) async {
+    Directory(_out!).createSync(recursive: true);
+    tester.view.physicalSize = const Size(512, 512);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    await tester.runAsync(loadAppFonts);
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: RepaintBoundary(
+          child: Container(
+            width: 512,
+            height: 512,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [PubColors.white, Color(0xFFE6DCFF)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(112),
+            ),
+            alignment: Alignment.center,
+            child: const RoboPub(size: 440),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    final image = await captureImage(
+      find.byType(RepaintBoundary).first.evaluate().single,
+    );
+    final bytes = await tester.runAsync(
+      () => image.toByteData(format: ui.ImageByteFormat.png),
+    );
+    File(p.join(_out!, 'icon_512.png'))
+        .writeAsBytesSync(bytes!.buffer.asUint8List());
+  });
+}

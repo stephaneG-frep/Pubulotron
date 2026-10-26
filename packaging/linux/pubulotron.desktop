@@ -5,3 +5,6 @@ Exec=pubulotron
 Terminal=false
 Type=Application
 Categories=Graphics;Office;
+Icon=pubulotron
+StartupWMClass=pubulotron
+Keywords=publicité;flyer;carte de visite;affiche;PDF;QR code;

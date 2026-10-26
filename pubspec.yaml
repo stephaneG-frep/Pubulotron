@@ -1,5 +1,5 @@
 name: pubulotron
-description: "A new Flutter project."
+description: "Pubulotron — studio publicitaire assisté par IA."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+version: 2.0.0+2
 
 environment:
   sdk: ^3.13.2
@@ -40,13 +40,18 @@ dependencies:
   sqflite: ^2.4.5
   path_provider: ^2.1.6
   archive: ^4.5.2
-  image_picker: ^1.2.4
   uuid: ^4.6.0
-  qr_flutter: ^4.1.0
   http: ^1.6.0
   path: ^1.9.1
   sqflite_common_ffi: ^2.4.5
   file_picker: ^13.3.0
+  flutter_riverpod: ^3.4.3
+  share_plus: ^13.3.1
+  barcode: ^2.2.9
+  image: ^4.12.0
+  vector_math: ^2.4.4
+  flutter_localizations:
+    sdk: flutter
 
 dev_dependencies:
   flutter_test:
@@ -71,9 +76,53 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/fonts/DejaVuSans.ttf
-    - assets/fonts/DejaVuSans-Bold.ttf
-    - assets/fonts/LICENSE-DejaVu.txt
+    - assets/fonts/
+    - assets/images/
+
+  fonts:
+    - family: Liberation Sans
+      fonts:
+        - asset: assets/fonts/LiberationSans-Regular.ttf
+        - asset: assets/fonts/LiberationSans-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/LiberationSans-Italic.ttf
+          style: italic
+        - asset: assets/fonts/LiberationSans-BoldItalic.ttf
+          weight: 700
+          style: italic
+    - family: Liberation Serif
+      fonts:
+        - asset: assets/fonts/LiberationSerif-Regular.ttf
+        - asset: assets/fonts/LiberationSerif-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/LiberationSerif-Italic.ttf
+          style: italic
+        - asset: assets/fonts/LiberationSerif-BoldItalic.ttf
+          weight: 700
+          style: italic
+    - family: Ubuntu
+      fonts:
+        - asset: assets/fonts/Ubuntu-R.ttf
+        - asset: assets/fonts/Ubuntu-B.ttf
+          weight: 700
+        - asset: assets/fonts/Ubuntu-RI.ttf
+          style: italic
+        - asset: assets/fonts/Ubuntu-BI.ttf
+          weight: 700
+          style: italic
+    - family: Ubuntu Condensed
+      fonts:
+        - asset: assets/fonts/Ubuntu-C.ttf
+    - family: DejaVu Sans
+      fonts:
+        - asset: assets/fonts/DejaVuSans.ttf
+        - asset: assets/fonts/DejaVuSans-Bold.ttf
+          weight: 700
+    - family: DejaVu Sans Mono
+      fonts:
+        - asset: assets/fonts/DejaVuSansMono.ttf
+        - asset: assets/fonts/DejaVuSansMono-Bold.ttf
+          weight: 700
 
   # To add assets to your application, add an assets section, like this:
   # assets:

@@ -1,8 +1,15 @@
 Package: pubulotron
-Version: 1.0.0
+Version: 2.0.0
 Section: graphics
 Priority: optional
 Architecture: amd64
+Installed-Size: 0
 Maintainer: Pubulotron <contact@pubulotron.local>
-Depends: libgtk-3-0, libsecret-1-0
-Description: Studio graphique intelligent pour cartes, flyers et visuels publicitaires.
+Depends: libgtk-3-0, libglib2.0-0, libsecret-1-0, libstdc++6
+Recommends: xdg-desktop-portal, xdg-desktop-portal-gtk | xdg-desktop-portal-kde | xdg-desktop-portal-lxqt, gnome-keyring | kwalletmanager
+Homepage: https://pubulotron.local
+Description: Studio publicitaire assisté par IA
+ Pubulotron crée cartes de visite, flyers, affiches, menus, étiquettes,
+ invitations et publications pour les réseaux sociaux. Éditeur graphique
+ complet, modèles par métier, QR codes, pack publicitaire, IA générative
+ (OpenAI, Claude, Gemini, Mistral) et imprimerie PDF multipose vectorielle.
