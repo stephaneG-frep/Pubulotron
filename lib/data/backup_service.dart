@@ -7,6 +7,7 @@ import '../models/business_profile.dart';
 import '../models/project.dart';
 import 'asset_store.dart';
 import 'legacy_converter.dart';
+import '../history/history_service.dart';
 import 'repositories.dart';
 
 class BackupReport {
@@ -16,6 +17,7 @@ class BackupReport {
     this.templates = 0,
     this.assets = 0,
     this.settings = 0,
+    this.versions = 0,
     this.skipped = const [],
   });
 
@@ -24,12 +26,17 @@ class BackupReport {
   final int templates;
   final int assets;
   final int settings;
+
+  /// Versions d'historique restaurées.
+  final int versions;
   final List<String> skipped;
 
   String get summary {
     final parts = [
       if (projects > 0) '$projects projet${projects > 1 ? 's' : ''}',
       if (profiles > 0) '$profiles profil${profiles > 1 ? 's' : ''}',
+      if (versions > 0)
+        '$versions version${versions > 1 ? 's' : ''} d’historique',
       if (templates > 0) '$templates modèle${templates > 1 ? 's' : ''}',
       if (assets > 0) '$assets image${assets > 1 ? 's' : ''}',
     ];
@@ -53,6 +60,7 @@ class BackupService {
     required this.templates,
     required this.settings,
     required this.assets,
+    this.versions,
   });
 
   final ProjectRepository projects;
@@ -60,6 +68,9 @@ class BackupService {
   final TemplateRepository templates;
   final SettingsRepository settings;
   final AssetStore assets;
+
+  /// Historique des créations (inclus dans la sauvegarde complète).
+  final VersionRepository? versions;
 
   static const String format = 'pubulotron-backup';
   static const int formatVersion = 1;
@@ -87,7 +98,9 @@ class BackupService {
     final allProfiles = await profiles.list();
     final allTemplates = await templates.list();
     final allSettings = await settings.readAll();
+    final allVersions = await versions?.all() ?? const <VersionEntry>[];
     final assetIds = <String>{
+      for (final v in allVersions) ...v.document.assetIds,
       for (final p in allProjects) ...p.document.assetIds,
       for (final t in allTemplates) ...t.document.assetIds,
       for (final p in allProfiles)
@@ -103,6 +116,9 @@ class BackupService {
       _addJson(archive, 'templates/${t.id}.json', t.toJson());
     }
     _addJson(archive, 'settings.json', allSettings);
+    for (final v in allVersions) {
+      _addJson(archive, 'versions/${v.projectId}/${v.number}.json', v.toJson());
+    }
     final assetCount = await _addAssets(archive, assetIds);
     _addJson(archive, 'manifest.json', {
       'format': format,
@@ -171,6 +187,7 @@ class BackupService {
     var templateCount = 0;
     var assetCount = 0;
     var settingsCount = 0;
+    var versionCount = 0;
     final skipped = <String>[];
     final isLegacy = manifestFile == null;
 
@@ -204,6 +221,14 @@ class BackupService {
         } else if (name.startsWith('templates/')) {
           await templates.save(CustomTemplate.fromJson(json));
           templateCount++;
+        } else if (name.startsWith('versions/')) {
+          final repo = versions;
+          if (repo == null) {
+            skipped.add(name);
+          } else {
+            await repo.save(VersionEntry.fromJson(json));
+            versionCount++;
+          }
         } else if (name == 'settings.json') {
           for (final entry in json.entries) {
             if (entry.value is Map) {
@@ -237,6 +262,7 @@ class BackupService {
       templates: templateCount,
       assets: assetCount,
       settings: settingsCount,
+      versions: versionCount,
       skipped: skipped,
     );
   }

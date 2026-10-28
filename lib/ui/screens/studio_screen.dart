@@ -9,6 +9,9 @@ import '../../models/design_element.dart';
 import '../../models/project.dart';
 import '../editor/ai_chat_panel.dart';
 import '../editor/editor_canvas.dart';
+import '../editor/history_panel.dart';
+import '../editor/improve_dialog.dart';
+import '../editor/sync_banner.dart';
 import '../editor/insert_panel.dart';
 import '../editor/properties_panel.dart';
 import '../export_actions.dart';
@@ -143,12 +146,14 @@ class _StudioState extends ConsumerState<_Studio> {
     const SingleActivator(LogicalKeyboardKey.digit0, control: true): () =>
         c.setZoom(1),
     const SingleActivator(LogicalKeyboardKey.keyG, control: true): c.toggleGrid,
+    const SingleActivator(LogicalKeyboardKey.keyH, control: true): () =>
+        showHistory(context, ref, c),
   };
 
   @override
   Widget build(BuildContext context) {
     final images = ref.watch(servicesProvider).images;
-    final canvas = Focus(
+    final editorCanvas = Focus(
       focusNode: _focus,
       autofocus: true,
       child: GestureDetector(
@@ -164,12 +169,22 @@ class _StudioState extends ConsumerState<_Studio> {
         ),
       ),
     );
+    final canvas = Column(
+      children: [
+        SyncBanner(controller: c),
+        Expanded(child: editorCanvas),
+      ],
+    );
     return CallbackShortcuts(
       bindings: _shortcuts,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final width = constraints.maxWidth;
-          final toolbar = _Toolbar(controller: c, compact: width < 760);
+          final toolbar = _Toolbar(
+            controller: c,
+            compact: width < 760,
+            roomy: width >= 1300,
+          );
           if (width >= 1100) {
             return Column(
               children: [
@@ -393,10 +408,17 @@ class _BarButton extends StatelessWidget {
 }
 
 class _Toolbar extends ConsumerWidget {
-  const _Toolbar({required this.controller, required this.compact});
+  const _Toolbar({
+    required this.controller,
+    required this.compact,
+    required this.roomy,
+  });
 
   final EditorController controller;
   final bool compact;
+
+  /// Assez de place pour afficher le zoom, la grille et les guides.
+  final bool roomy;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -459,7 +481,13 @@ class _Toolbar extends ConsumerWidget {
                 tooltip: 'Rétablir (Ctrl+Y)',
                 onPressed: c.canRedo ? c.redo : null,
               ),
-              if (!compact) ...[
+              if (!compact)
+                ToolButton(
+                  icon: Icons.history,
+                  tooltip: 'Historique des versions (Ctrl+H)',
+                  onPressed: () => showHistory(context, ref, c),
+                ),
+              if (roomy) ...[
                 const SizedBox(width: 8),
                 ToolButton(
                   icon: Icons.zoom_out,
@@ -493,11 +521,13 @@ class _Toolbar extends ConsumerWidget {
                 _FaceSwitch(controller: c),
               ],
               const Spacer(),
-              if (compact)
+              if (!roomy)
                 PopupMenuButton<String>(
-                  tooltip: 'Affichage',
-                  icon: const Icon(Icons.visibility_outlined),
+                  tooltip: 'Outils et affichage',
+                  icon: const Icon(Icons.more_vert),
                   onSelected: (v) => switch (v) {
+                    'improve' => showImproveDialog(context, c),
+                    'history' => showHistory(context, ref, c),
                     'in' => c.setZoom(c.zoom * 1.25),
                     'out' => c.setZoom(c.zoom / 1.25),
                     'fit' => c.setZoom(1),
@@ -505,6 +535,23 @@ class _Toolbar extends ConsumerWidget {
                     _ => c.toggleSmartGuides(),
                   },
                   itemBuilder: (_) => [
+                    if (compact) ...const [
+                      PopupMenuItem(
+                        value: 'improve',
+                        child: ListTile(
+                          leading: Icon(Icons.auto_fix_high),
+                          title: Text('Améliore mon design'),
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'history',
+                        child: ListTile(
+                          leading: Icon(Icons.history),
+                          title: Text('Historique des versions'),
+                        ),
+                      ),
+                      PopupMenuDivider(),
+                    ],
                     const PopupMenuItem(value: 'in', child: Text('Zoomer')),
                     const PopupMenuItem(value: 'out', child: Text('Dézoomer')),
                     const PopupMenuItem(
@@ -522,6 +569,15 @@ class _Toolbar extends ConsumerWidget {
                       child: const Text('Guides'),
                     ),
                   ],
+                ),
+              if (!compact)
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: FilledButton.tonalIcon(
+                    onPressed: () => showImproveDialog(context, c),
+                    icon: const Icon(Icons.auto_fix_high),
+                    label: const Text('Améliore mon design'),
+                  ),
                 ),
               _ExportMenu(controller: c, compact: compact),
             ],

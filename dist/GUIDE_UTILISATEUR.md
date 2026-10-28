@@ -1,4 +1,4 @@
-# Guide utilisateur — Pubulotron
+# Guide utilisateur — Pubulotron 2.1
 
 *La machine à fabriquer des pubs qui ont du génie !*
 
@@ -130,7 +130,17 @@ Décrivez la campagne, choisissez les supports (carte, flyer A5, affiche A3, pub
 - **Apparence** : système, clair ou sombre.
 - **Sauvegarde automatique** et **résolution par défaut** des images.
 
-## 13. En cas de problème
+## 13. Nouveautés de la version 2.1
+
+- **Studio de variantes** : plusieurs designs différents pour un même format, à comparer côte à côte.
+- **Synchronisation** : une modification de téléphone, d'e-mail, de logo ou de couleur peut être répercutée, après confirmation, sur les autres formats du pack.
+- **Historique** (Ctrl+H dans l'atelier) : retrouvez, comparez et restaurez les versions précédentes.
+- **Améliore mon design** : conseils ou amélioration automatique, toujours comparée avant d'être acceptée.
+- **Surprends-moi !** : des directions artistiques à partir d'une phrase.
+
+Le détail de chaque fonction figure dans `NOUVEAUTES_2.1.md`.
+
+## 14. En cas de problème
 
 | Message | Solution |
 |---|---|
@@ -141,3 +151,5 @@ Décrivez la campagne, choisissez les supports (carte, flyer A5, affiche A3, pub
 | « Trousseau sécurisé indisponible » (Linux) | Démarrer gnome-keyring ou KWallet, puis relancer Pubulotron. |
 | « Disposition impossible » (Imprimerie) | Papier plus grand, orientation Auto, ou marges et fond perdu plus petits. |
 | « emplacement photo vide » | Sélectionner l'emplacement dans l'atelier › Choisir une image. |
+| Variantes : « certaines n'ont pas pu être produites » | Les variantes réussies sont conservées ; relancer avec « Ajouter » ou « Régénérer ». |
+| Analyse « sur la structure seulement » | Le modèle choisi ne lit pas les images : choisir un modèle compatible pour une analyse visuelle. |

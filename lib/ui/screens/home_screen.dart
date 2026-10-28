@@ -87,6 +87,17 @@ class HomeScreen extends ConsumerWidget {
                     icon: const Icon(Icons.add),
                     label: const Text('Nouvelle création'),
                   ),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: PubColors.rose,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () => ref
+                        .read(navigationProvider.notifier)
+                        .go(AppSection.surprise),
+                    icon: const Icon(Icons.celebration_outlined),
+                    label: const Text('Surprends-moi !'),
+                  ),
                 ],
               ),
             ],

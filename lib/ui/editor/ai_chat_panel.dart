@@ -5,6 +5,7 @@ import '../../ai/ai_client.dart';
 import '../../ai/ai_design_service.dart';
 import '../../app/providers.dart';
 import '../../editor/editor_controller.dart';
+import '../../history/history_service.dart';
 import '../../models/app_settings.dart';
 import '../theme.dart';
 import '../widgets/robopub.dart';
@@ -135,6 +136,10 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel> {
         } else {
           if (c.pageIndex != pageIndex) c.setPage(pageIndex);
           c.replacePage(result.page);
+          c.noteHistory(
+            'Modification par l’agent IA : $instruction',
+            kind: VersionKind.ai,
+          );
           chat.add(
             projectId,
             ChatEntry(

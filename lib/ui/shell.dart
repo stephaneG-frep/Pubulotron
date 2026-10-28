@@ -12,6 +12,8 @@ import 'screens/print_screen.dart';
 import 'screens/qr_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/studio_screen.dart';
+import 'screens/surprise_screen.dart';
+import 'screens/variants_screen.dart';
 import 'sections.dart';
 import 'theme.dart';
 import 'widgets/robopub.dart';
@@ -33,6 +35,8 @@ class PubulotronShell extends ConsumerWidget {
     AppSection.aiSettings => const AiSettingsScreen(),
     AppSection.help => const HelpScreen(),
     AppSection.qr => const QrScreen(),
+    AppSection.variants => const VariantsScreen(),
+    AppSection.surprise => const SurpriseScreen(),
   };
 
   @override

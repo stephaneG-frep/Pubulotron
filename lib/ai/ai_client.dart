@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -45,15 +46,35 @@ class AiRequest {
     required this.user,
     this.jsonSchema,
     this.maxTokens = 16000,
+    this.images = const [],
   });
 
   final String system;
   final String user;
 
+  /// Images PNG jointes (analyse visuelle), pour les modèles qui les lisent.
+  final List<Uint8List> images;
+
+  AiRequest withoutImages() => AiRequest(
+    system: system,
+    user: user,
+    jsonSchema: jsonSchema,
+    maxTokens: maxTokens,
+  );
+
   /// Schéma JSON de la réponse attendue (sortie structurée si le
   /// fournisseur la prend en charge, sinon décrit dans le prompt).
   final Map<String, dynamic>? jsonSchema;
   final int maxTokens;
+}
+
+class AiResponse {
+  const AiResponse(this.text, {required this.imagesUsed});
+
+  final String text;
+
+  /// Vrai si le modèle a effectivement reçu les images jointes.
+  final bool imagesUsed;
 }
 
 class AiConfig {
@@ -86,7 +107,36 @@ class AiClient {
       model.startsWith('claude-sonnet-5-5') ||
       model.startsWith('claude-fable-5');
 
-  Future<String> complete(AiConfig config, AiRequest request) async {
+  Future<String> complete(AiConfig config, AiRequest request) async =>
+      (await completeDetailed(config, request)).text;
+
+  /// Comme [complete], en indiquant si les images ont été acceptées.
+  /// Un modèle qui refuse les images est réinterrogé sans elles.
+  Future<AiResponse> completeDetailed(
+    AiConfig config,
+    AiRequest request,
+  ) async {
+    if (request.images.isEmpty) {
+      return AiResponse(
+        await _completeWithRetry(config, request),
+        imagesUsed: false,
+      );
+    }
+    try {
+      return AiResponse(
+        await _completeWithRetry(config, request),
+        imagesUsed: true,
+      );
+    } on AiException catch (e) {
+      if (e.kind != AiErrorKind.badRequest) rethrow;
+      return AiResponse(
+        await _completeWithRetry(config, request.withoutImages()),
+        imagesUsed: false,
+      );
+    }
+  }
+
+  Future<String> _completeWithRetry(AiConfig config, AiRequest request) async {
     final key = config.apiKey.trim();
     if (key.isEmpty) {
       throw AiException(
@@ -263,7 +313,24 @@ class AiClient {
         'model': config.model,
         'messages': [
           {'role': 'system', 'content': system},
-          {'role': 'user', 'content': request.user},
+          {
+            'role': 'user',
+            'content': request.images.isEmpty
+                ? request.user
+                : [
+                    {'type': 'text', 'text': request.user},
+                    for (final png in request.images)
+                      {
+                        'type': 'image_url',
+                        'image_url': config.provider == AiProvider.mistral
+                            ? 'data:image/png;base64,${base64Encode(png)}'
+                            : {
+                                'url':
+                                    'data:image/png;base64,${base64Encode(png)}',
+                              },
+                      },
+                  ],
+          },
         ],
         'response_format': {'type': 'json_object'},
         tokenField: request.maxTokens,
@@ -323,7 +390,23 @@ class AiClient {
             'max_tokens': request.maxTokens,
             'system': system,
             'messages': [
-              {'role': 'user', 'content': request.user},
+              {
+                'role': 'user',
+                'content': request.images.isEmpty
+                    ? request.user
+                    : [
+                        for (final png in request.images)
+                          {
+                            'type': 'image',
+                            'source': {
+                              'type': 'base64',
+                              'media_type': 'image/png',
+                              'data': base64Encode(png),
+                            },
+                          },
+                        {'type': 'text', 'text': request.user},
+                      ],
+              },
             ],
             'output_config': {
               'effort': 'medium',
@@ -399,6 +482,13 @@ class AiClient {
           {
             'role': 'user',
             'parts': [
+              for (final png in request.images)
+                {
+                  'inline_data': {
+                    'mime_type': 'image/png',
+                    'data': base64Encode(png),
+                  },
+                },
               {'text': request.user},
             ],
           },

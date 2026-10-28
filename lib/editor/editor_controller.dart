@@ -5,12 +5,19 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
 import '../engine/geometry.dart';
+import '../history/history_service.dart';
 import '../models/design_document.dart';
 import '../models/design_element.dart';
 import '../models/fill.dart';
 import '../models/project.dart';
 
 enum SaveState { saved, pending, saving, error }
+
+class HistoryNote {
+  const HistoryNote(this.label, this.kind);
+  final String label;
+  final VersionKind kind;
+}
 
 typedef ProjectSaver = Future<void> Function(Project project);
 
@@ -52,6 +59,22 @@ class EditorController extends ChangeNotifier {
   List<SnapGuide> activeGuides = const [];
 
   SaveState saveState = SaveState.saved;
+
+  /// Opération notable à inscrire dans l'historique lors de la prochaine
+  /// sauvegarde (IA, synchronisation, restauration…).
+  HistoryNote? _historyNote;
+
+  /// Annonce une opération notable ; force une nouvelle version.
+  void noteHistory(String label, {VersionKind kind = VersionKind.edit}) {
+    _historyNote = HistoryNote(label, kind);
+  }
+
+  HistoryNote? takeHistoryNote() {
+    final note = _historyNote;
+    _historyNote = null;
+    return note;
+  }
+
   String? saveError;
 
   // Glisser-déposer en cours
@@ -152,6 +175,9 @@ class EditorController extends ChangeNotifier {
   }
 
   bool get _inTransaction => _transactionBase != null;
+
+  /// Geste ou saisie en cours (les modifications ne sont pas encore figées).
+  bool get inTransaction => _inTransaction;
 
   // ------------------------------------------------------------ sauvegarde
 
@@ -545,6 +571,13 @@ class EditorController extends ChangeNotifier {
       scaleContent: scaleContent,
     );
     _commit(resized.copyWith(formatId: formatId ?? 'custom'));
+  }
+
+  /// Met à jour les métadonnées du projet (groupe de variantes, pack…).
+  void updateProject(Project Function(Project) change) {
+    _project = change(_project);
+    _scheduleSave();
+    _notify();
   }
 
   void rename(String name) {

@@ -1,4 +1,4 @@
-# Installation de Pubulotron 2.0
+# Installation de Pubulotron 2.1
 
 ## Android (téléphones et tablettes ARM64)
 
@@ -53,6 +53,10 @@ Sans clé API, toutes les fonctions sauf l'IA restent disponibles, y compris hor
 ## Mise à jour depuis la version 1
 
 Les projets de la première version sont repris automatiquement. Sous Linux, l'ancienne base (`~/Documents/pubulotron_projects.db`) est copiée dans le nouveau dossier de l'application, sans être supprimée. Les anciens projets sont convertis au format en millimètres, à la dimension d'une carte de visite (85 × 55 mm).
+
+## Mise à jour depuis la version 2.0
+
+Installez simplement la nouvelle version par-dessus (APK ou `.deb`) : projets, fiches, modèles, réglages et clés API sont conservés. La base de données reçoit automatiquement la table d'historique ; la première ouverture d'une création dans l'atelier enregistre son état comme « Version d'origine ».
 
 ## Vérifier l'intégrité des fichiers
 

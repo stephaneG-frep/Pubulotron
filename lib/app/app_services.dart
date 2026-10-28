@@ -15,9 +15,12 @@ import '../data/repositories.dart';
 import '../data/secret_store.dart';
 import '../engine/image_cache.dart';
 import '../export/file_service.dart';
+import '../history/history_service.dart';
 import '../export/raster_exporter.dart';
 import '../models/app_settings.dart';
 import '../print/pdf_exporter.dart';
+import '../review/design_review.dart';
+import '../variants/variant_service.dart';
 
 /// Ensemble des services de l'application, créés une seule fois au démarrage.
 class AppServices {
@@ -32,15 +35,23 @@ class AppServices {
        profiles = ProfileRepository(database),
        templates = TemplateRepository(database),
        settings = SettingsRepository(database),
+       versions = VersionRepository(database),
        aiClient = AiClient(httpClient: httpClient) {
     images = DesignImageCache(assets);
     aiDesign = AiDesignService(aiClient);
+    history = HistoryService(
+      versions,
+      policy: HistoryPolicy(maxVersions: initialSettings.historyMaxVersions),
+    );
+    variants = VariantService(aiDesign);
+    review = DesignReviewService(aiDesign);
     backup = BackupService(
       projects: projects,
       profiles: profiles,
       templates: templates,
       settings: settings,
       assets: assets,
+      versions: versions,
     );
     pdf = PdfExporter(store: assets);
     raster = RasterExporter(images);
@@ -55,9 +66,13 @@ class AppServices {
   final ProfileRepository profiles;
   final TemplateRepository templates;
   final SettingsRepository settings;
+  final VersionRepository versions;
   final AiClient aiClient;
   late final DesignImageCache images;
   late final AiDesignService aiDesign;
+  late final HistoryService history;
+  late final VariantService variants;
+  late final DesignReviewService review;
   late final BackupService backup;
   late final PdfExporter pdf;
   late final RasterExporter raster;

@@ -13,6 +13,9 @@ class Project {
     this.profileId,
     this.packId,
     this.packRole,
+    this.variantGroupId,
+    this.variantIndex,
+    this.variantStyle,
   }) : id = id ?? newId('proj'),
        createdAt = createdAt ?? DateTime.now(),
        updatedAt = updatedAt ?? DateTime.now();
@@ -33,6 +36,18 @@ class Project {
   /// Support dans le pack (carte, flyer, affiche…).
   final String? packRole;
 
+  /// Groupe de variantes : designs différents pour un même format.
+  /// (Un pack regroupe au contraire un même design décliné en plusieurs formats.)
+  final String? variantGroupId;
+
+  /// Numéro de la variante dans son groupe (1, 2, 3…).
+  final int? variantIndex;
+
+  /// Direction artistique de la variante (ex. « Moderne et minimaliste »).
+  final String? variantStyle;
+
+  bool get isVariant => variantGroupId != null;
+
   Project copyWith({
     String? id,
     String? name,
@@ -43,6 +58,9 @@ class Project {
     String? profileId,
     String? packId,
     String? packRole,
+    String? variantGroupId,
+    int? variantIndex,
+    String? variantStyle,
   }) => Project(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -53,6 +71,9 @@ class Project {
     profileId: profileId ?? this.profileId,
     packId: packId ?? this.packId,
     packRole: packRole ?? this.packRole,
+    variantGroupId: variantGroupId ?? this.variantGroupId,
+    variantIndex: variantIndex ?? this.variantIndex,
+    variantStyle: variantStyle ?? this.variantStyle,
   );
 
   Map<String, dynamic> toJson() => {
@@ -64,6 +85,9 @@ class Project {
     if (profileId != null) 'profileId': profileId,
     if (packId != null) 'packId': packId,
     if (packRole != null) 'packRole': packRole,
+    if (variantGroupId != null) 'variantGroupId': variantGroupId,
+    if (variantIndex != null) 'variantIndex': variantIndex,
+    if (variantStyle != null) 'variantStyle': variantStyle,
     'document': document.toJson(),
   };
 
@@ -76,6 +100,9 @@ class Project {
     profileId: json['profileId'] as String?,
     packId: json['packId'] as String?,
     packRole: json['packRole'] as String?,
+    variantGroupId: json['variantGroupId'] as String?,
+    variantIndex: (json['variantIndex'] as num?)?.toInt(),
+    variantStyle: json['variantStyle'] as String?,
     document: DesignDocument.fromJson(
       Map<String, dynamic>.from(json['document'] as Map? ?? const {}),
     ),

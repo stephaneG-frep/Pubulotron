@@ -22,6 +22,18 @@ Pubulotron est un studio publicitaire assisté par intelligence artificielle, d�
 
 Fonctionnent **hors ligne** : création, modèles, modification, sauvegarde, QR codes, exports, impression, pack hors ligne. Seules les fonctions d'IA demandent Internet et une clé API.
 
+## Nouveautés de la version 2.1
+
+| Fonction | Résumé |
+|---|---|
+| Studio de variantes | 2 à 5 designs réellement différents pour un même format (une direction artistique par variante, génération successive avec progression, contrôle local de similarité), galerie, régénération, duplication, modèle, comparateur de 2 à 5 propositions. |
+| Synchronisation des formats | Une modification (coordonnées, slogan, QR code, logo, couleurs) peut être répercutée sur les déclinaisons et variantes liées : choix des créations, aperçu avant/après, confirmation, point de restauration. Correspondance par contenu et rôle sémantique, mise en page conservée. |
+| Historique intelligent | Versions persistantes de chaque création (description automatique, aperçu, comparaison, restauration sans perte, duplication, suppression, rétention configurable), incluses dans les sauvegardes. |
+| Améliore mon design | Conseils (analyse locale WCAG / tailles / marges / QR, plus IA avec image du rendu si le modèle la lit) et amélioration automatique protégée par des garde-fous, comparée avant/après. |
+| Surprends-moi ! | Directions artistiques proposées par l'IA à partir d'une phrase, puis création des variantes choisies. |
+
+Détails : [docs/NOUVEAUTES_2.1.md](docs/NOUVEAUTES_2.1.md).
+
 ## Audit de la version précédente et corrections
 
 | Problème constaté | Correction |
@@ -55,6 +67,10 @@ lib/
   export/                   Export PNG/JPEG, fichiers (enregistrer, partager)
   data/                     SQLite, dépôts, médiathèque, sauvegarde ZIP,
                             trousseau des clés, conversion des anciens projets
+  variants/                 Directions artistiques, génération de variantes, similarité
+  sync/                     Détection et application des modifications entre créations liées
+  history/                  Versions persistantes, politique de rétention, résumé des changements
+  review/                   Analyse locale, conseils IA, amélioration protégée
   ui/                       Thème, coquille, rubriques, atelier, widgets
 ```
 
@@ -66,6 +82,7 @@ lib/
 - **Documents immuables.** Chaque modification produit un nouveau document : historique d'annulation fiable, une seule étape par geste ou par réponse de l'IA.
 - **IA structurée.** L'IA renvoie des éléments (type, position en mm, police, couleur…) ou des opérations (`update`, `add`, `delete`, `reorder`, `background`). Tout est validé et normalisé (`ElementSanitizer`) : types inconnus ignorés, valeurs bornées, polices et pictogrammes ramenés au catalogue, éléments verrouillés protégés, avertissements remontés à l'utilisateur.
 - **État.** Riverpod 3 pour l'application ; `ChangeNotifier` immuable-par-copie pour l'atelier (mises à jour à haute fréquence pendant les gestes).
+- **Historique.** Table `versions` (schéma 4, migration automatique depuis la 2.0) : instantanés complets des documents ; les modifications rapprochées sont fusionnées, les opérations notables (IA, synchronisation, restauration) forcent une nouvelle version.
 - **Persistance.** SQLite (sqflite sur Android, sqflite FFI sous Linux). Base dans le dossier de l'application ; une base de la première version trouvée dans `Documents` est copiée (sans être supprimée) puis migrée.
 - **Secrets.** Clés API dans le Keystore Android ou libsecret (GNOME Keyring / KWallet), jamais dans la base ni dans les sauvegardes.
 
@@ -74,7 +91,7 @@ lib/
 ```sh
 flutter pub get
 flutter analyze
-flutter test                      # 90 tests (+ 2 captures facultatives)
+flutter test                      # 119 tests (+ 2 captures facultatives)
 sh tool/check_fidelity.sh         # comparaison aperçu / PDF (pdftoppm + ImageMagick)
 SCREENSHOTS_OUT=build/shots flutter test test/visual_tour_test.dart   # captures de chaque écran
 sh tool/build_release.sh          # contrôles + APK + .deb + archive source dans dist/

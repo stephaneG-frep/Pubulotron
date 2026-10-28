@@ -6,7 +6,10 @@ Color? parseHexColor(Object? value) {
   if (value is int) return Color(value);
   if (value is! String) return null;
   var hex = value.trim();
-  if (hex.startsWith('#')) hex = hex.substring(1);
+  final hashed = hex.startsWith('#');
+  if (hashed) hex = hex.substring(1);
+  // La forme courte (#RGB) exige le dièse : « bad » ou « fab » ne sont pas des couleurs.
+  if (hex.length == 3 && !hashed) return null;
   if (hex.startsWith('0x') || hex.startsWith('0X')) hex = hex.substring(2);
   if (hex.length == 3) {
     hex = hex.split('').map((c) => '$c$c').join();

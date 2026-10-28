@@ -15,6 +15,60 @@ class HelpTopic {
 
 const helpTopics = [
   HelpTopic(
+    Icons.auto_awesome_mosaic_outlined,
+    'Créer plusieurs variantes d’un même format',
+    [
+      'Ouvrez « Studio de variantes », décrivez votre besoin, choisissez le format et le nombre de variantes (2 à 5).',
+      'Chaque variante suit une direction artistique différente ; la progression s’affiche et chaque variante est enregistrée dès qu’elle est prête.',
+      'Ouvrir, Modifier, Régénérer, Dupliquer ou Enregistrer comme modèle depuis chaque carte ; cochez 2 à 5 variantes pour les comparer.',
+      'Une nouvelle série n’écrase jamais les précédentes.',
+    ],
+    'Exemple : « Crée cinq cartes de visite différentes pour mon activité de dépannage informatique. »',
+  ),
+  HelpTopic(
+    Icons.sync,
+    'Répercuter une modification sur les autres formats',
+    [
+      'Ouvrez une création d’un pack (ou d’une série de variantes) et modifiez par exemple le téléphone.',
+      'Un bandeau propose : Uniquement cette création, Toutes les déclinaisons, ou Choisir…',
+      'La fenêtre de confirmation montre chaque création concernée avant/après ; rien n’est modifié sans votre accord.',
+      'Un point de restauration est créé dans l’historique de chaque création modifiée.',
+    ],
+    'La mise en page de chaque format est conservée : seuls les contenus concernés changent.',
+  ),
+  HelpTopic(
+    Icons.history,
+    'Retrouver une ancienne version',
+    [
+      'Dans l’atelier, bouton Historique (ou Ctrl+H).',
+      'Chaque version indique sa date, ce qui a changé et un aperçu.',
+      'Restaurez, dupliquez ou supprimez une version ; cochez-en deux pour les comparer.',
+      'Le nombre de versions conservées se règle dans Paramètres IA › Préférences.',
+    ],
+    'Restaurer la version 2 ne perd pas la version 5 : l’état actuel est d’abord enregistré.',
+  ),
+  HelpTopic(
+    Icons.auto_fix_high,
+    'Améliorer un design',
+    [
+      'Dans l’atelier, bouton « Améliore mon design ».',
+      'Mode Conseils : analyse des contrastes, tailles, marges, QR codes et de la composition, sans rien modifier (fonctionne aussi sans IA).',
+      'Mode Amélioration automatique : comparez l’original et la proposition, puis Accepter, Refuser, Modifier davantage ou Enregistrer comme nouvelle variante.',
+      'Vos coordonnées et le contenu de vos QR codes sont toujours protégés.',
+    ],
+    'Exemple : « Rends cette carte plus professionnelle, mais conserve mes textes et mon QR code. »',
+  ),
+  HelpTopic(
+    Icons.celebration_outlined,
+    'Surprends-moi !',
+    [
+      'Depuis le tableau de bord, bouton « Surprends-moi ! ».',
+      'Écrivez votre activité en une phrase, choisissez le format et le nombre de créations.',
+      'L’IA propose cinq directions artistiques ; cochez celles qui vous plaisent puis Créer.',
+    ],
+    'Exemple : « Je suis artisan menuisier. » donne par exemple Artisan traditionnel, Bois et nature, Atelier industriel…',
+  ),
+  HelpTopic(
     Icons.contact_page_outlined,
     'Créer une carte de visite',
     [
@@ -99,7 +153,7 @@ const helpTopics = [
       'Le nombre de cartes par feuille et de feuilles est calculé automatiquement ; vérifiez l’aperçu de chaque feuille.',
       'Activez les traits de découpe et, si besoin, le recto verso (choisissez le même bord de retournement dans votre imprimante).',
     ],
-    'Exemple : 100 cartes 85 × 55 mm, A4, marges 10 mm → 10 cartes par feuille (2 × 5), 10 feuilles.',
+    'Exemple : 100 cartes 85 × 55 mm, A4, marges 10 mm : 10 cartes par feuille (2 × 5), 10 feuilles.',
   ),
   HelpTopic(
     Icons.restore,
@@ -114,6 +168,8 @@ const helpTopics = [
 ];
 
 const offlineFeatures = [
+  ('Historique des versions et synchronisation des formats', true),
+  ('Variantes hors ligne et analyse de design locale', true),
   ('Création manuelle et atelier graphique', true),
   ('Bibliothèque de modèles', true),
   ('Modification des créations', true),
@@ -124,6 +180,7 @@ const offlineFeatures = [
   ('Pack publicitaire hors ligne (depuis la fiche)', true),
   ('Création et modification par l’IA', false),
   ('Test de connexion aux fournisseurs IA', false),
+  ('Variantes, Surprends-moi et amélioration par l’IA', false),
 ];
 
 class HelpScreen extends StatelessWidget {

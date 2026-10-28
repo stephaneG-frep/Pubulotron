@@ -40,7 +40,7 @@ git ls-files --cached --others --exclude-standard \
 
 step 'Documentation'
 cp README.md "$dist/README.md"
-cp docs/INSTALLATION.md docs/GUIDE_UTILISATEUR.md docs/RAPPORT_TESTS.md "$dist/"
+cp docs/INSTALLATION.md docs/GUIDE_UTILISATEUR.md docs/NOUVEAUTES_2.1.md docs/RAPPORT_TESTS.md "$dist/"
 
 step 'Livrables'
 ls -l "$dist"

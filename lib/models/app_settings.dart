@@ -45,6 +45,7 @@ class AppSettings {
     this.activeProfileId,
     this.autosave = true,
     this.exportDpi = 300,
+    this.historyMaxVersions = 30,
     this.print = const PrintSettings(),
   });
 
@@ -54,6 +55,9 @@ class AppSettings {
   final String? activeProfileId;
   final bool autosave;
   final double exportDpi;
+
+  /// Nombre maximal de versions conservées par création (politique de rétention).
+  final int historyMaxVersions;
   final PrintSettings print;
 
   String modelFor(AiProvider p) {
@@ -68,6 +72,7 @@ class AppSettings {
     String? activeProfileId,
     bool? autosave,
     double? exportDpi,
+    int? historyMaxVersions,
     PrintSettings? print,
   }) => AppSettings(
     themeMode: themeMode ?? this.themeMode,
@@ -76,6 +81,7 @@ class AppSettings {
     activeProfileId: activeProfileId ?? this.activeProfileId,
     autosave: autosave ?? this.autosave,
     exportDpi: exportDpi ?? this.exportDpi,
+    historyMaxVersions: historyMaxVersions ?? this.historyMaxVersions,
     print: print ?? this.print,
   );
 
@@ -86,6 +92,7 @@ class AppSettings {
     if (activeProfileId != null) 'activeProfileId': activeProfileId,
     'autosave': autosave,
     'exportDpi': exportDpi,
+    'historyMaxVersions': historyMaxVersions,
     'print': print.toJson(),
   };
 
@@ -111,6 +118,8 @@ class AppSettings {
       activeProfileId: json['activeProfileId'] as String?,
       autosave: json['autosave'] as bool? ?? true,
       exportDpi: (json['exportDpi'] as num?)?.toDouble() ?? 300,
+      historyMaxVersions: ((json['historyMaxVersions'] as num?)?.toInt() ?? 30)
+          .clamp(5, 200),
       print: json['print'] is Map
           ? PrintSettings.fromJson(
               (json['print'] as Map).cast<String, dynamic>(),

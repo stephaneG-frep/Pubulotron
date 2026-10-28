@@ -1,6 +1,6 @@
-# Rapport de tests — Pubulotron 2.0.0
+# Rapport de tests — Pubulotron 2.1.0
 
-Date : 27 octobre 2026 · Flutter 3.47.2 · Dart 3.13.2 · Ubuntu 22.04 (Lubuntu), x86-64.
+Date : 27 octobre 2026 (version 2.1.0) · Flutter 3.47.2 · Dart 3.13.2 · Ubuntu 22.04 (Lubuntu), x86-64.
 
 Tous les résultats ci-dessous proviennent d'exécutions réelles. Rien n'est extrapolé.
 
@@ -11,12 +11,40 @@ Tous les résultats ci-dessous proviennent d'exécutions réelles. Rien n'est ex
 | Dépendances | `flutter pub get` | OK |
 | Format | `dart format --set-exit-if-changed lib test` | OK |
 | Analyse statique | `flutter analyze` | **0 problème** |
-| Tests automatisés | `flutter test` | **90 réussis, 0 échec**, 2 ignorés volontairement (captures d'écran, activées par `SCREENSHOTS_OUT`) |
+| Tests automatisés | `flutter test` | **119 réussis, 0 échec**, 2 ignorés volontairement (captures d'écran, activées par `SCREENSHOTS_OUT`) |
 | Fidélité aperçu / PDF | `sh tool/check_fidelity.sh` | 1,27 % des pixels diffèrent de plus de 25 % (contours anticrénelés et tramage des dégradés), aucun décalage géométrique |
 | Compilation Linux | `flutter build linux --release` | OK, application lancée et affichée sous X11 |
 | Compilation Android ARM64 | `flutter build apk --release --target-platform android-arm64` | OK (voir la section Livrables) |
 
-## Détail par fichier
+## Version 2.1 : tests des nouvelles fonctions
+
+Fichiers `studio_v21_test.dart` (22 tests de services) et `app_v21_test.dart` (6 tests d'interface sur l'application complète).
+
+| Exigence | Tests |
+|---|---|
+| 1. Génération de plusieurs variantes | 5 variantes Claude simulées, chacune enregistrée à sa production, numérotation, style, progression ; variantes hors ligne de compositions distinctes (similarité < 0,86) ; détection des compositions trop proches ; lecture des directions IA ; galerie complète dans l'interface (génération, deuxième série, comparaison, duplication). |
+| 2. Conservation des créations précédentes | Une deuxième série dans le même groupe continue la numérotation (3, 4) sans modifier les variantes existantes en base. |
+| 3. Modification indépendante d'une variante | Modifier une variante en base laisse les autres intactes. |
+| 4. Synchronisation des coordonnées | Changement du téléphone sur la carte d'un pack de 5 formats : les 4 autres sont mis à jour, sans qu'aucun élément ne bouge ni ne change de taille ; segment d'une ligne de coordonnées, QR code, logo et couleur ; parcours complet dans l'interface (bandeau, confirmation, application). |
+| 5. Synchronisation sélective | Seule la création choisie change ; point de restauration puis version « Synchronisation » dans son historique ; « Uniquement cette création » ne touche à rien dans l'interface. |
+| 6. Restauration d'une version | Restaurer la version 2 crée la version 6 ; la version 5 reste disponible ; restauration depuis le panneau d'historique. |
+| 7. Conservation des médias | Une ancienne version garde la référence et le fichier de son logo ; sauvegarde ZIP puis restauration : 2 versions et l'image retrouvées. |
+| 8. Amélioration IA sans écrasement | Document original inchangé ; téléphone et contenu du QR rétablis malgré l'IA ; élément supprimé sans autorisation rétabli ; changements de style autorisés appliqués ; mode Conseils sans aucune modification dans l'interface. |
+| 9. Gestion des erreurs réseau | Coupure réseau pendant une série : les variantes produites sont conservées et l'échec est signalé ; clé refusée : arrêt immédiat ; erreur réseau pendant l'amélioration : erreur typée, rien n'est modifié ; modèle refusant les images : nouvelle tentative sans image, limite expliquée. |
+| 10. Sauvegarde et réouverture | Variante et historique relus après fermeture et réouverture de la base ; base de la version 2.0 (schéma 3) migrée vers le schéma 4. |
+
+Autres tests ajoutés : politique de l'historique (fusion des retouches rapprochées, versions forcées, rétention gardant la version initiale), résumé des changements en français, analyse locale (contraste WCAG, taille, marge, QR), envoi de l'image du rendu à l'IA.
+
+**Non-régression** : les 91 tests de la version 2.0 passent toujours. Ils couvrent l'éditeur, les gestes et calques, les QR codes, la sauvegarde, la génération IA, l'export PDF et l'impression multipose (100 cartes, 26 pages recto verso). Un seul test a été adapté, pour faire défiler le mode d'emploi devenu plus long ; l'application, elle, n'avait pas régressé.
+
+**Défauts trouvés par les tests de la 2.1 et corrigés** :
+1. Le bandeau de synchronisation figeait sa référence au premier accès, donc après la modification : aucune modification n'était jamais proposée.
+2. Un mot de trois lettres (« bad », « fab ») renvoyé par l'IA était lu comme une couleur `#RGB`.
+3. La mesure de similarité ignorait les grands aplats de couleur.
+4. La barre d'outils de l'atelier débordait sur ordinateur (68 px) et sur téléphone (8 px) après l'ajout des nouveaux boutons.
+5. Les créations antérieures à la 2.1 n'avaient pas de version d'origine dans l'historique.
+
+## Détail par fichier (socle 2.0)
 
 | Fichier | Tests | Ce qui est vérifié |
 |---|---|---|

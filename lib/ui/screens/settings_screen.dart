@@ -345,6 +345,40 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                     .read(settingsProvider.notifier)
                     .update((x) => x.copyWith(exportDpi: v)),
               ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<int>(
+                isExpanded: true,
+                initialValue:
+                    const [
+                      10,
+                      20,
+                      30,
+                      50,
+                      100,
+                    ].contains(settings.historyMaxVersions)
+                    ? settings.historyMaxVersions
+                    : 30,
+                decoration: const InputDecoration(
+                  labelText: 'Historique : versions conservées par création',
+                  helperText: 'Au-delà, les plus anciennes sont supprimées (la version initiale est toujours gardée).',
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 10,
+                    child: Text('10 versions (économe)'),
+                  ),
+                  DropdownMenuItem(value: 20, child: Text('20 versions')),
+                  DropdownMenuItem(
+                    value: 30,
+                    child: Text('30 versions (recommandé)'),
+                  ),
+                  DropdownMenuItem(value: 50, child: Text('50 versions')),
+                  DropdownMenuItem(value: 100, child: Text('100 versions')),
+                ],
+                onChanged: (v) => ref
+                    .read(settingsProvider.notifier)
+                    .update((x) => x.copyWith(historyMaxVersions: v)),
+              ),
             ],
           ),
         ),

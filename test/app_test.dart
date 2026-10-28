@@ -30,10 +30,16 @@ void main() {
     }
     await tapText(tester, 'Mode d’emploi', last: true);
     expect(
-      find.text('Imprimer plusieurs cartes sur une feuille'),
+      find.text('Créer plusieurs variantes d’un même format'),
       findsOneWidget,
     );
-    expect(find.text('Disponible hors ligne ?'), findsOneWidget);
+    for (final topic in [
+      'Imprimer plusieurs cartes sur une feuille',
+      'Disponible hors ligne ?',
+    ]) {
+      await scrollTo(tester, find.text(topic));
+      expect(find.text(topic), findsOneWidget);
+    }
   });
 
   testWidgets(

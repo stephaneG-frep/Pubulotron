@@ -84,6 +84,22 @@ class Fill {
       ? Fill.linear(primary, secondary, angle: value)
       : this;
 
+  /// Remplissage dont chaque couleur passe par [map] (renvoie `this` si
+  /// rien ne change).
+  Fill mapColors(Color Function(Color) map) {
+    final mapped = colors.map(map).toList();
+    var changed = false;
+    for (var i = 0; i < mapped.length; i++) {
+      if (mapped[i] != colors[i]) changed = true;
+    }
+    if (!changed) return this;
+    return switch (kind) {
+      FillKind.solid => Fill.solid(mapped.first),
+      FillKind.linear => Fill.linear(mapped[0], mapped[1], angle: angle),
+      FillKind.radial => Fill.radial(mapped[0], mapped[1]),
+    };
+  }
+
   Map<String, dynamic> toJson() => {
     'kind': kind.name,
     'colors': stops.map(colorToHex).toList(),

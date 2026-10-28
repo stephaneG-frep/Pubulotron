@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../ai/ai_client.dart';
 import '../data/secret_store.dart';
 import '../editor/editor_controller.dart';
+import '../history/history_service.dart';
 import '../models/app_settings.dart';
 import '../models/business_profile.dart';
 import '../models/project.dart';
@@ -22,7 +25,11 @@ class SettingsNotifier extends Notifier<AppSettings> {
 
   Future<void> update(AppSettings Function(AppSettings) change) async {
     state = change(state);
-    await ref.read(servicesProvider).saveSettings(state);
+    final services = ref.read(servicesProvider);
+    services.history.policy = HistoryPolicy(
+      maxVersions: state.historyMaxVersions,
+    );
+    await services.saveSettings(state);
   }
 }
 
@@ -40,8 +47,22 @@ class ProjectsNotifier extends AsyncNotifier<List<Project>> {
     state = AsyncData(await ref.read(servicesProvider).projects.list());
   }
 
-  Future<void> save(Project project) async {
-    await ref.read(servicesProvider).projects.save(project);
+  /// Enregistre ; avec [historyLabel], ajoute aussi une version à l'historique.
+  Future<void> save(
+    Project project, {
+    String? historyLabel,
+    VersionKind kind = VersionKind.edit,
+  }) async {
+    final services = ref.read(servicesProvider);
+    await services.projects.save(project);
+    if (historyLabel != null) {
+      await services.history.record(
+        project,
+        label: historyLabel,
+        kind: kind,
+        force: true,
+      );
+    }
     await refresh();
   }
 
@@ -54,6 +75,7 @@ class ProjectsNotifier extends AsyncNotifier<List<Project>> {
 
   Future<void> delete(String id) async {
     await ref.read(servicesProvider).projects.delete(id);
+    await ref.read(servicesProvider).history.deleteForProject(id);
     await refresh();
   }
 
@@ -229,6 +251,8 @@ enum AppSection {
   aiSettings,
   help,
   qr,
+  variants,
+  surprise,
 }
 
 class NavigationNotifier extends Notifier<AppSection> {
@@ -268,13 +292,35 @@ class EditorSessionNotifier extends Notifier<EditorController?> {
     final settings = ref.read(settingsProvider);
     // Capturés ici : la sauvegarde finale peut survenir après la fermeture.
     final services = ref.read(servicesProvider);
+    EditorController? controllerRef;
     final controller = EditorController(
       project: project,
       autosave: settings.autosave,
       onSave: (p) async {
         await services.projects.save(p);
-        if (ref.mounted) await ref.read(projectsProvider.notifier).refresh();
+        final note = controllerRef?.takeHistoryNote();
+        await services.history.record(
+          p,
+          label: note?.label,
+          kind: note?.kind ?? VersionKind.edit,
+          force: note != null,
+        );
+        if (ref.mounted) {
+          await ref.read(projectsProvider.notifier).refresh();
+          ref.invalidate(versionsProvider(p.id));
+        }
       },
+    );
+    controllerRef = controller;
+    // Première ouverture d'une création sans historique (ex. créée avec la
+    // version 2.0) : son état d'origine devient la version 1.
+    unawaited(
+      services.history
+          .record(project, label: 'Version d’origine')
+          .then((_) {
+            if (ref.mounted) ref.invalidate(versionsProvider(project.id));
+          })
+          .catchError((_) => null),
     );
     _set(controller);
     // Le précédent est sauvegardé (si besoin) lors de sa libération.
@@ -303,3 +349,8 @@ void openInStudio(WidgetRef ref, Project project) {
   ref.read(editorProvider.notifier).open(project);
   ref.read(navigationProvider.notifier).go(AppSection.studio);
 }
+
+/// Historique d'une création (la version la plus récente en premier).
+final versionsProvider = FutureProvider.family<List<VersionEntry>, String>(
+  (ref, projectId) => ref.read(servicesProvider).history.versions(projectId),
+);

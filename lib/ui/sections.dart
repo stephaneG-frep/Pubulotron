@@ -47,6 +47,21 @@ const sections = <SectionInfo>[
     offline: false,
   ),
   SectionInfo(
+    AppSection.surprise,
+    'Surprends-moi !',
+    Icons.celebration_outlined,
+    PubColors.orange,
+    'Des directions artistiques en une phrase',
+    offline: false,
+  ),
+  SectionInfo(
+    AppSection.variants,
+    'Studio de variantes',
+    Icons.auto_awesome_mosaic_outlined,
+    PubColors.rose,
+    'Plusieurs designs pour un même format',
+  ),
+  SectionInfo(
     AppSection.studio,
     'Atelier graphique',
     Icons.design_services_outlined,

@@ -115,6 +115,7 @@ Règles de composition :
 - Formes (type "shape", shape) : ${ShapeKind.values.map((s) => s.name).join(', ')} ; cornerRadius en mm pour les rectangles.
 - QR code : type "qr", carré, qrData = URL complète (https://…) ; fill blanc conseillé.
 - Photo : type "image" avec role "photo" (emplacement que l’utilisateur remplira). Logo : type "image" avec role "logo" si un logo est disponible.
+- Donne un "role" sémantique à chaque élément porteur d’information, parmi : name (nom de l’activité), headline, slogan, phone, email, website, address, hours, contact, services, offer, cta, body, qr, logo, photo, decoration.
 - N’invente jamais de coordonnées (téléphone, e-mail, adresse) : utilise exactement celles de la fiche, ou omets-les.
 - Textes en français, percutants, sans fautes. 6 à 14 éléments par face.''';
 
@@ -131,6 +132,7 @@ Règles de composition :
     String formatLabel = '',
     bool duplex = false,
     int count = 4,
+    String extraInstructions = '',
   }) async {
     final size = Size(widthMm, heightMm);
     final user =
@@ -144,8 +146,8 @@ Fiche professionnelle :
 ${profileSummary(profile)}
 
 ${_rules(size)}
-
-Propose exactement $count designs nettement différents (composition, palette, typographie, ambiance), chacun avec un titre court, un style, une justification (rationale) d’une ou deux phrases et une palette.
+${extraInstructions.trim().isEmpty ? '' : '\n${extraInstructions.trim()}\n'}
+Propose exactement $count design${count > 1 ? 's nettement différents' : ''} (composition, palette, typographie, ambiance), chacun avec un titre court, un style, une justification (rationale) d’une ou deux phrases et une palette.
 Réponds au format {"designs": [...]}.''';
     final request = AiRequest(
       system: _system,

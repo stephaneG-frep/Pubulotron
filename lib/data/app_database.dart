@@ -6,7 +6,7 @@ class AppDatabase {
 
   final Database db;
 
-  static const int version = 3;
+  static const int version = 4;
 
   static Future<AppDatabase> open(
     String path, {
@@ -32,6 +32,7 @@ class AppDatabase {
             )''');
           await _createV2(db);
           await _createV3(db);
+          await _createV4(db);
         },
         onUpgrade: (db, oldVersion, _) async {
           if (oldVersion < 2) await _createV2(db);
@@ -40,6 +41,7 @@ class AppDatabase {
             await db.execute('ALTER TABLE projects ADD COLUMN pack_id TEXT');
             await _createV3(db);
           }
+          if (oldVersion < 4) await _createV4(db);
         },
       ),
     );
@@ -71,6 +73,23 @@ class AppDatabase {
     );
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_projects_pack ON projects(pack_id)',
+    );
+  }
+
+  /// Version 4 : historique persistant des créations.
+  static Future<void> _createV4(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS versions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        number INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        label TEXT,
+        kind TEXT,
+        payload TEXT NOT NULL
+      )''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_versions_project ON versions(project_id, number)',
     );
   }
 
